@@ -1,0 +1,10 @@
+{
+  "name": "almond-benchmark",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Almond quantum and classical benchmark explorer for the Qollab hackathon",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "python3 -m http.server 3000 --bind 127.0.0.1"
+  }
+}
