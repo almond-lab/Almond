@@ -6,6 +6,10 @@ A responsive landing page and interactive template for comparing a classical
 baseline with Grover's quantum search algorithm, styled with Almond's supplied
 logo, GC Artum fonts, and Obsidian / Ember / Warm White palette.
 
+The page includes animated orbital visuals with a pause control, benchmark
+scenario presets, an interactive scaling sweep, keyboard chart navigation, and
+reduced-motion support. The comparison export includes its model assumptions.
+
 ## Run locally
 
 Run `npm run dev` and open `http://127.0.0.1:3000`.

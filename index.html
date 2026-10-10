@@ -27,10 +27,12 @@
         <div class="hero-actions"><a class="button button-primary" href="#benchmark">Explore the benchmark <span aria-hidden="true">↗</span></a><a class="text-link" href="#methodology">Read the methodology <span aria-hidden="true">↓</span></a></div>
         <div class="hero-note"><span class="small-cross" aria-hidden="true">+</span> A transparent starting point for the Qollab hackathon.</div>
       </div>
-      <div class="hero-art" role="img" aria-label="An abstract orbital diagram contrasting linear classical search with the square-root scaling of quantum search">
-        <div class="art-grain"></div><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div><div class="orbit orbit-four"></div>
-        <div class="orbital-core"><span>√N</span><small>GROVER'S ALGORITHM</small></div><div class="orbital-point point-one"></div><div class="orbital-point point-two"></div>
+      <div class="hero-art" role="group" aria-label="Quantum search visualization">
+        <div class="art-grain" aria-hidden="true"></div><div class="art-wash" aria-hidden="true"></div>
+        <div class="orbital-scene" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div><div class="orbit orbit-four"></div><div class="orbital-point point-one"></div><div class="orbital-point point-two"></div></div>
+        <div class="orbital-core"><span>√N</span><small>GROVER'S ALGORITHM</small></div>
         <span class="art-label label-top">SUPERPOSITION → INTERFERENCE</span><div class="art-tag"><span>01 / UNSTRUCTURED SEARCH</span><strong>A different scaling law.</strong></div><span class="art-coordinate">N → ∞</span>
+        <button class="motion-toggle" id="motion-toggle" type="button" aria-pressed="false">Pause motion</button>
       </div>
     </section>
 
@@ -40,6 +42,8 @@
       <div class="section-heading"><div><p class="eyebrow">01 / THE BENCHMARK EXPLORER</p><h2 id="benchmark-title">Make the comparison.<br>See the trade-off.</h2></div><p>Start with unstructured search. Adjust the search space and compare a classical baseline with Grover's amplitude amplification.</p></div>
       <div class="explorer">
         <div class="explorer-top"><div class="experiment-title"><span class="experiment-icon" aria-hidden="true">⌘</span><div><h3>Unstructured search</h3><p>Classical random search vs. Grover's algorithm</p></div></div><span class="demo-badge"><span></span> ILLUSTRATIVE MODEL</span></div>
+        <div class="benchmark-presets" aria-label="Suggested comparisons"><span>Explore a scenario</span><button class="preset-button" type="button" data-exponent="8" data-metric="queries" aria-pressed="false">Small search</button><button class="preset-button" type="button" data-exponent="20" data-metric="queries" aria-pressed="true">Large search</button><button class="preset-button" type="button" data-exponent="12" data-metric="runtime" aria-pressed="false">Overhead effect</button><button class="sweep-button" id="sweep-benchmark" type="button" aria-pressed="false">Animate scaling <span aria-hidden="true">↗</span></button></div>
+        <p class="sr-only" id="benchmark-status" role="status"></p>
         <div class="explorer-layout">
           <aside class="controls" aria-label="Benchmark parameters">
             <div class="control-group"><label for="problem-size">Search-space size <span class="info" title="Number of possible inputs, with exactly one marked state." aria-label="Number of possible inputs, with exactly one marked state.">i</span></label><output id="size-value" for="problem-size">2²⁰</output><p id="size-detail" class="control-description">1,048,576 candidate states</p><input id="problem-size" type="range" min="8" max="30" value="20" step="1" aria-describedby="size-detail"><div class="range-extents"><span>2⁸</span><span>2³⁰</span></div></div>
@@ -50,7 +54,8 @@
           </aside>
           <div class="chart-pane">
             <div class="chart-heading"><div><h4 id="chart-title">Oracle query complexity</h4><p id="chart-subtitle">Resource budget at a matched success threshold</p></div><div class="legend"><span><i class="classical-color"></i>Classical</span><span><i class="quantum-color"></i>Quantum</span></div></div>
-            <div class="chart-container" id="chart-container"><svg id="benchmark-chart" viewBox="0 0 760 330" role="img" aria-labelledby="chart-title chart-description"><desc id="chart-description">Logarithmic comparison of the classical and quantum resource count as the search-space size grows.</desc></svg><div id="chart-tooltip" class="chart-tooltip" hidden></div></div>
+            <p class="sr-only" id="chart-key-help">Use the left and right arrow keys to change the search-space size.</p>
+            <div class="chart-container" id="chart-container"><svg id="benchmark-chart" viewBox="0 0 760 330" role="img" tabindex="0" aria-labelledby="chart-title chart-description" aria-describedby="chart-key-help"><desc id="chart-description">Logarithmic comparison of the classical and quantum resource count as the search-space size grows.</desc></svg><div id="chart-tooltip" class="chart-tooltip" hidden></div></div>
             <div class="chart-caption"><span>SEARCH-SPACE SIZE (N)</span><span>LOGARITHMIC SCALE</span></div>
             <div class="result-grid" aria-live="polite" aria-atomic="true"><div class="result"><span class="result-label"><i class="classical-color"></i>CLASSICAL BASELINE</span><strong id="classical-result">996,148 <small>queries</small></strong><p id="classical-detail">Random search, without replacement</p></div><div class="result"><span class="result-label"><i class="quantum-color"></i>QUANTUM ALGORITHM</span><strong id="quantum-result">804 <small>queries</small></strong><p id="quantum-detail">Iterations + verification, across runs</p></div><div class="result result-ratio"><span class="result-label" id="ratio-label">QUERY REDUCTION</span><strong id="ratio-result">1,239×</strong><p id="ratio-detail">Theoretical, not a measured speedup</p></div></div>
             <div class="resource-strip" aria-label="Quantum model resources"><div><span>SEARCH REGISTER</span><strong id="resource-qubits">20 qubits</strong></div><div><span>GROVER ITERATIONS / RUN</span><strong id="resource-iterations">804</strong></div><div><span>INDEPENDENT RUNS</span><strong id="resource-runs">1</strong></div><div><span>IDEAL SUCCESS / RUN</span><strong id="resource-success">99.99998%</strong></div></div><p class="data-disclaimer"><span aria-hidden="true">ⓘ</span> Illustrative data · not measured on hardware. Query reduction does not establish practical quantum advantage.</p>
