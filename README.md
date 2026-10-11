@@ -101,6 +101,14 @@ The exact reference independently enumerates the 81 ternary targets, applies the
 
 GC Artum, orange, warm cream and dark surfaces give the interface its Almond identity. Touch, mouse, keyboard controls and optional haptics keep the swipe interaction responsive. The circuit panel lives inside Optimize Portfolio rather than following you around every page.
 
+## Research spotlight: the QAOA connection
+
+Quantum Lab opens with OpenAI’s September 25, 2026 preprint, [*QAOA attains the SK ground-state energy in the thermodynamic-first limit*](https://github.com/openai/math/blob/main/preprints/QAOA-attains-the-SK-ground-state-energy-in-the-thermodynamic-first-limit-September-25-2026/QAOA-attains-the-SK-ground-state-energy-in-the-thermodynamic-first-limit-September-25-2026.pdf). The result concerns expected energy per spin in the Gaussian, zero-field Sherrington–Kirkpatrick model, with system size tending to infinity before circuit depth increases. It provides no quantitative depth bound or efficient angle-selection procedure.
+
+QSwipe uses the same standard Ising cost–mixer QAOA architecture studied there. Its portfolio objective also has local fields and financial constraints, so the theorem does not establish optimality for this app. We do not implement the paper’s proof construction or its universal deterministic angles.
+
+To make the connection executable, `sk-research.mjs` adds an isolated eight-spin SK companion: seeded standard Gaussian pair couplings with 1/√n scaling, one or two layers, 48 local tuning evaluations and 1,024 final sampled shots. It follows the paper’s positive-energy convention by minimizing the negative Hamiltonian. The lab shows expected energy, best actual sampled energy, the exact 256-state optimum and the sampled gap per spin, with downloadable inputs and results. This finite classical simulation leaves the portfolio untouched and does not test the asymptotic theorem or demonstrate quantum speedup.
+
 ## Run it locally
 
 Node 24 or newer. KaTeX is bundled locally; the web app requires no package dependencies.

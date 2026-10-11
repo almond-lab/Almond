@@ -4,18 +4,23 @@ const $=id=>document.getElementById(id);
 const names={BTC:'BTC','xyz:SP500':'S&P 500','xyz:BRENTOIL':'Brent','xyz:GOLD':'Gold'};
 const coins=Object.keys(names);
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
-let toastTimer, haptics=false, seenSnapshot=null;
-function showView(view,scroll=true){
+let toastTimer, haptics=false, seenAllocatedSnapshot=null;
+function showView(view,scroll=true,recordHistory=true){
   if(!['swipe','portfolio','how','circuit','optimize','code'].includes(view))return;
+  const previous=document.body.dataset.view, active=document.activeElement;
+  const hiddenFocus=active && document.getElementById(previous+'-view')?.contains(active);
   document.body.dataset.view=view;
   for(const key of ['swipe','portfolio','how','circuit','optimize','code'])$(key+'-view').hidden=key!==view;
   for(const button of document.querySelectorAll('.view-nav [data-view-target]')){if(button.dataset.viewTarget===view)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
-  history.replaceState(null,'',view==='swipe'?location.pathname:'#'+view);
+  const target=view==='swipe'?location.pathname+location.search:'#'+view;
+  if(recordHistory && previous && previous!==view)history.pushState(null,'',target);
+  else if(!previous)history.replaceState(null,'',target);
+  if(hiddenFocus && previous!==view){const heading=$(view+'-view').querySelector('h1');if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});}}
   if(scroll)window.scrollTo({top:0,behavior:reduced.matches?'instant':'smooth'});
 }
 document.addEventListener('click',event=>{const b=event.target.closest('[data-view-target]');if(b)showView(b.dataset.viewTarget);});
-showView(location.hash.slice(1)||'swipe',false);
-window.addEventListener('hashchange',()=>showView(location.hash.slice(1)||'swipe'));
+showView(location.hash.slice(1)||'swipe',false,false);
+window.addEventListener('hashchange',()=>showView(location.hash.slice(1)||'swipe',true,false));
 function toast(message){$('session-toast').textContent=message;$('session-toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('session-toast').classList.remove('visible'),2400);}
 function line(parent,cls,label,value){const row=document.createElement('div');row.className=cls;const name=document.createElement('span');name.textContent=label;const v=document.createElement('strong');v.textContent=value;row.append(name,v);parent.append(row);return row;}
 function render(state){
@@ -29,7 +34,7 @@ function render(state){
   const proposal=$('mini-proposal');proposal.replaceChildren();$('mini-result-mode').textContent=state.applied?'AUTO ALLOCATED':state.selected?(state.historical?'HISTORICAL':'SAMPLED / NOT APPLIED'):state.running?'RETUNING':'NOT RUN YET';
   if(state.selected){for(let i=0;i<4;i++)line(proposal,'mini-allocation-row',names[coins[i]],state.selected.choices[i]>0?'↗ Long 20%':state.selected.choices[i]<0?'↙ Short 20%':'— Flat');const gap=document.createElement('p');gap.className='mini-result-gap';gap.textContent=`Sampled score ${state.selected.cost.toFixed(4)} · exact gap ${state.gap.toFixed(4)}. ${state.applied?'Automatically allocated to your paper account.':state.historical?'New inputs exist; this proposal cannot apply.':'Automatic paper allocation follows.'}`;proposal.append(gap);}else{const p=document.createElement('p');p.className='rail-note';p.textContent=state.running?'Four shared angles. One frozen snapshot. Sampling next.':'BTC · S&P 500 · Brent · Gold. One allocation after the next solve.';proposal.append(p);}
   $('quick-undo').disabled=$('undo-button').disabled;
-  if(state.snapshot&&state.snapshot!==seenSnapshot){seenSnapshot=state.snapshot;if(!state.historical)toast('Circuit completed · automatic paper allocation');}
+  if(state.applied && state.snapshot && state.snapshot!==seenAllocatedSnapshot){seenAllocatedSnapshot=state.snapshot;toast('Paper portfolio allocated · positions and fees updated');}
 }
 window.addEventListener('qswipe:state',e=>render(e.detail));
 $('mini-optimize').addEventListener('click',()=>portfolio.optimize('manual'));

@@ -8,7 +8,7 @@ export const portfolio = new PortfolioController();
 const $ = id => document.getElementById(id);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 let market = 'all', posts = [], current = null, reactions = {}, history = [], skipped = new Set(), seen = new Set();
-let busy = false, loading = false, generation = 0, fetchGeneration = 0, controller, autoTimer, dataState = 'loading', fetchedAt = null, pointer = null;
+let busy = false, loading = false, generation = 0, fetchGeneration = 0, controller, autoTimer, expiryTimer, dataState = 'loading', fetchedAt = null, pointer = null;
 let lastStateNote = 'Connecting to the X feed…';
 try { reactions = readReactions(JSON.parse(localStorage.getItem(REACTION_KEY) || '{}')); } catch { /* Continue without stored reactions. */ }
 
@@ -98,6 +98,7 @@ function updateControls() {
   $('export-reactions').disabled = !Object.keys(reactions).length;
   if ($('clear-reactions')) $('clear-reactions').disabled = !Object.keys(reactions).length || busy;
   $('refresh-feed').disabled = loading;
+  document.querySelectorAll('[data-feed-retry]').forEach(button=>button.disabled=loading);
   if ($('connect-feed')) $('connect-feed').disabled = loading;
 }
 
@@ -124,7 +125,7 @@ function renderDeck(preferredId) {
   busy = false;
   const focused = document.activeElement?.classList.contains('pulse-card');
   const candidates = selectPosts(posts, { market, filter: $('review-filter').value, sort: $('feed-sort').value, reactions, skipped });
-  current = candidates.find(p => p.id === preferredId) || candidates.find(p => !seen.has(p.id)) || null;
+  current = isStale() ? null : candidates.find(p => p.id === preferredId) || candidates.find(p => !seen.has(p.id)) || null;
   portfolio.setPost(current);
   document.querySelector('.backcard-one').style.transform='';
   const deck = $('deck'); deck.replaceChildren();
@@ -137,9 +138,10 @@ function renderDeck(preferredId) {
     const empty = el('div', 'deck-empty'); empty.id = 'deck-empty';
     empty.append(el('span', 'empty-kicker', dataState === 'live' ? 'YOUR PERSPECTIVE, AT YOUR PACE' : 'REAL POSTS / REAL SOURCES'));
     const symbol = el('div', 'empty-symbol'); symbol.setAttribute('aria-hidden', 'true'); symbol.append(el('span', '', '↖'), el('span', '', '↗')); empty.append(symbol);
-    const title = dataState === 'loading' ? 'Finding the conversation.' : dataState === 'setup' ? 'Your feed is next.' : dataState === 'locked' ? 'Connect your private feed.' : dataState === 'error' ? 'The feed needs a moment.' : candidates.length || posts.length ? 'You’re through this view.' : 'A quiet moment.';
-    empty.append(el('h3', '', title), el('p', '', dataState === 'live' ? 'Refresh for the latest batch, choose another market, or revisit your reviewed posts.' : lastStateNote), el('span', 'empty-footer', dataState === 'setup' ? 'No sample posts. Waiting for the source.' : 'One perspective at a time.'));
-    if (dataState === 'live' && candidates.length) { const again = el('button', 'secondary-button', 'Revisit this view ↻'); again.type = 'button'; again.addEventListener('click', () => { seen.clear(); skipped.clear(); renderDeck(); }); empty.append(again); }
+    const title = isStale() ? 'Time for a fresh read.' : dataState === 'loading' ? 'Finding the conversation.' : dataState === 'setup' ? 'Your feed is next.' : dataState === 'locked' ? 'Connect your private feed.' : dataState === 'error' ? 'The feed needs a moment.' : candidates.length || posts.length ? 'You’re through this view.' : 'A quiet moment.';
+    empty.append(el('h3', '', title), el('p', '', isStale() ? 'This batch is more than 15 minutes old. Refresh the feed before recording another directional view.' : dataState === 'live' ? 'Refresh for the latest batch, choose another market, or revisit your reviewed posts.' : lastStateNote), el('span', 'empty-footer', dataState === 'setup' ? 'No sample posts. Waiting for the source.' : 'One perspective at a time.'));
+    if (isStale() || dataState === 'error') { const retry=el('button','secondary-button',isStale()?'Refresh live feed ↻':'Try the feed again ↻');retry.type='button';retry.dataset.feedRetry='true';retry.disabled=loading;retry.addEventListener('click',loadFeed);empty.append(retry); }
+    if (!isStale() && dataState === 'live' && candidates.length) { const again = el('button', 'secondary-button', 'Revisit this view ↻'); again.type = 'button'; again.addEventListener('click', () => { seen.clear(); skipped.clear(); renderDeck(); }); empty.append(again); }
     deck.append(empty);
   }
   renderJournal(); updateControls();
@@ -231,7 +233,7 @@ function updateMarketLinks() {
 
 async function loadFeed() {
   const token = ++fetchGeneration;
-  controller?.abort(); controller = new AbortController(); clearTimeout(autoTimer);
+  controller?.abort(); controller = new AbortController(); clearTimeout(autoTimer); clearTimeout(expiryTimer);
   loading = true; dataState = 'loading'; lastStateNote = 'Fetching a recent batch from X…';
   $('feed-status').textContent = 'Updating the conversation'; $('feed-status').dataset.state = 'loading';
   if (!posts.length) renderDeck(); else updateControls();
@@ -243,6 +245,7 @@ async function loadFeed() {
     if (!response.ok) { const error = new Error(result.message || 'This feed could not be loaded.'); error.state = result.state; throw error; }
     dataState = result.state; lastStateNote = result.note;
     posts = result.posts; fetchedAt = result.fetchedAt || null;
+    if (fetchedAt) expiryTimer=setTimeout(()=>{if(!isStale())return;$('feed-status').textContent='Feed refresh required';$('feed-status').dataset.state='stale';message('Refresh the feed to continue: these posts are more than 15 minutes old.');renderDeck();},Math.max(0,Date.parse(fetchedAt)+15*60_000-Date.now()+1));
     $('feed-status').textContent = result.state === 'live' ? 'Recent X posts connected' : 'X connection required';
     $('feed-status').dataset.state = result.state;
     $('feed-note').textContent = lastStateNote;
@@ -301,6 +304,6 @@ window.addEventListener('storage', event => {
   try { reactions = readReactions(JSON.parse(event.newValue || '{}')); history = []; renderDeck(current?.id); } catch { /* Ignore invalid external storage. */ }
 });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && dataState === 'live' && Date.now() - Date.parse(fetchedAt) >= 300_000) loadFeed(); });
-window.addEventListener('pagehide', () => { clearTimeout(autoTimer); controller?.abort(); $('feed-access').value = ''; });
+window.addEventListener('pagehide', () => { clearTimeout(autoTimer); clearTimeout(expiryTimer); controller?.abort(); $('feed-access').value = ''; });
 window.addEventListener('pageshow', event => { if (event.persisted) loadFeed(); });
 updateMarketLinks(); renderJournal(); loadFeed();
