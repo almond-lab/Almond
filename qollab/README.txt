@@ -22,6 +22,8 @@ For your own frozen website experiment, export the QSwipe snapshot, rename it `s
 
 ## Desktop teaching demo (optional)
 
+`local_demo.py` is available in the GitHub repository and is deliberately excluded from the Qollab starter ZIP. Run it on your computer; do not paste it into the Qollab editor. The Qollab entry point is `main.py`.
+
 Use Python 3.10 or newer:
 
 ```sh

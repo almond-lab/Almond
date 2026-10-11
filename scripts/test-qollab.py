@@ -156,6 +156,15 @@ class RuntimeContract(unittest.TestCase):
             self.assertNotIn("qiskit_aer", text)
             self.assertNotIn("qiskit-aer", text)
 
+    def test_desktop_helper_pasted_in_qollab_never_uses_file_or_submits(self):
+        helper = (ROOT / "qollab/local_demo.py").read_text()
+        for namespace in ({"__name__": "__main__", "backend": self.device},
+                          {"__name__": "__main__"}):
+            with contextlib.redirect_stdout(self.out):
+                exec(compile(helper, "<code>", "exec"), namespace)
+        self.assertIn("not its Qollab entry point", self.out.getvalue())
+        self.assertEqual(self.device.calls, [])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

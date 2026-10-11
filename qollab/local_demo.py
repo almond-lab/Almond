@@ -12,7 +12,6 @@ from pathlib import Path
 from qiskit import transpile
 import numpy as np
 from qiskit.providers.basic_provider import BasicSimulator
-import main as runner
 
 
 def statevector(costs, angles):
@@ -61,11 +60,20 @@ def retune(artifact, seed):
 
 
 def cli():
+    if "backend" in globals() or "__file__" not in globals():
+        print("This is QSwipe's desktop helper, local_demo.py, not its Qollab entry point.")
+        print("Replace the Qollab editor contents with the complete qollab/main.py from the repository.")
+        print("main.py uses your pre-created backend and includes an embedded teaching snapshot.")
+        return
+    # Import only on the desktop path: if this helper is pasted as main.py,
+    # importing 'main' would otherwise import the entry point into itself.
+    global runner
+    import main as runner
     parser = argparse.ArgumentParser(description="Reproducible local QSwipe teaching demo; no provider API")
     parser.add_argument("--seed", type=int, default=731)
     parser.add_argument("--no-retune", action="store_true", help="Sample the DOCX's unoptimized illustrative angles")
     args = parser.parse_args()
-    folder = Path(__file__).resolve().parent
+    folder = Path(globals().get("__file__", "local_demo.py")).resolve().parent
     artifact = json.loads((folder/"snapshot.json").read_text(encoding="utf-8"))
     runner.validate_artifact(artifact)
     runner.construct_circuit(artifact)

@@ -5,7 +5,7 @@ const crc=data=>{let n=0xffffffff;for(const byte of data)n=crcTable[(n^byte)&255
 const local=[],central=[];let offset=0;
 // Vercel CLI excludes README.md from uploads. Recreate the archive's project
 // write-up from its identical README.txt so uploads behave the same everywhere.
-const files=new Set((await readdir('qollab')).filter(f=>/\.(py|json|txt|md)$/.test(f)&&!/_result\.json$/.test(f)));
+const files=new Set((await readdir('qollab')).filter(f=>/\.(py|json|txt|md)$/.test(f)&&!/_result\.json$/.test(f)&&f!=='local_demo.py'));
 files.add('README.md');
 for(const file of [...files].sort()){
   const name=Buffer.from('QSwipe-qollab/'+file),data=await readFile('qollab/'+(file==='README.md'?'README.txt':file)),checksum=crc(data);

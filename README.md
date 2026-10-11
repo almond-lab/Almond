@@ -23,7 +23,7 @@ The Vercel build emits static assets, API functions and `qswipe-qollab.zip`. Pub
 
 ## Execute the circuit on Qollab
 
-The **[qollab/ folder](qollab/README.md)** is independently runnable. It contains a labelled synthetic teaching snapshot, complete Python circuit code, Qollab-only requirements, an optional desktop demo and reproducible example output. A website export is optional.
+The **[qollab/ folder](qollab/README.md)** is independently runnable. It contains a labelled synthetic teaching snapshot, complete Python circuit code, Qollab-only requirements, an optional desktop demo and reproducible example output. The Qollab starter ZIP excludes the desktop helper to avoid confusing it with the `main.py` entry point. A website export is optional.
 
 1. Create a **Python / Qiskit** Qollab project.
 2. Paste the complete `qollab/main.py` into the editor, or upload the starter ZIP. It contains an embedded synthetic teaching snapshot, so uploading `snapshot.json` is optional. The requirements contain only Qiskit; remove old Aer requirements.
@@ -46,7 +46,7 @@ python3 local_demo.py --seed 731 --no-retune
 
 Qiskit 2.5.2 / NumPy 2.5.4 runs were verified; the updated starter and desktop demo use no Aer. The included sample output is from classical simulation, not hardware. Local retuning uses 48 exact state-vector evaluations and one final built-in BasicSimulator job. Equal-budget random baselines can also find the exact optimum in this small grid.
 
-The corrected starter was also verified in Qollab's actual browser/Pyodide runner on the built-in simulator: automatic entry point, literal snapshot loading, 1,024 returned shots, one submission and console JSON export. Eleven additional Python regression checks cover that runtime contract (`python3 scripts/test-qollab.py` from the repository root in an environment with Qiskit installed).
+The corrected starter was also verified in Qollab's actual browser/Pyodide runner on the built-in simulator: automatic entry point, literal snapshot loading, 1,024 returned shots, one submission and console JSON export. Twelve additional Python regression checks cover that runtime contract (`python3 scripts/test-qollab.py` from the repository root in an environment with Qiskit installed).
 
 For your live beliefs, choose **Export my frozen Qollab snapshot** in Quantum lab and replace the teaching `snapshot.json`. New swipes never change an uploaded snapshot or launch remote jobs.
 
