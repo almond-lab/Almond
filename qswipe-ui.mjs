@@ -6,9 +6,9 @@ const coins=Object.keys(names);
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
 let toastTimer, haptics=false, seenSnapshot=null;
 function showView(view,scroll=true){
-  if(!['swipe','portfolio','circuit'].includes(view))return;
+  if(!['swipe','portfolio','how','circuit'].includes(view))return;
   document.body.dataset.view=view;
-  for(const key of ['swipe','portfolio','circuit'])$(key+'-view').hidden=key!==view;
+  for(const key of ['swipe','portfolio','how','circuit'])$(key+'-view').hidden=key!==view;
   for(const button of document.querySelectorAll('.view-nav [data-view-target]')){if(button.dataset.viewTarget===view)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');}
   history.replaceState(null,'',view==='swipe'?location.pathname:'#'+view);
   if(scroll)window.scrollTo({top:0,behavior:reduced.matches?'instant':'smooth'});
@@ -19,8 +19,8 @@ window.addEventListener('hashchange',()=>showView(location.hash.slice(1)||'swipe
 function toast(message){$('session-toast').textContent=message;$('session-toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('session-toast').classList.remove('visible'),2400);}
 function line(parent,cls,label,value){const row=document.createElement('div');row.className=cls;const name=document.createElement('span');name.textContent=label;const v=document.createElement('strong');v.textContent=value;row.append(name,v);parent.append(row);return row;}
 function render(state){
-  const progress=Math.min(10,state.pending);$('session-ring').style.setProperty('--progress',String(progress/10));$('session-ring').setAttribute('aria-valuenow',String(progress));$('session-count').textContent=String(state.pending);$('session-mode').textContent=state.running?'RETUNING':'LOCAL SIM';
-  $('session-headline').textContent=state.running?'Snapshot locked.':state.pending>=10&&!state.ready?'Waiting for fresh inputs.':state.pending?'Your view is taking shape.':'Build your signal.';
+  const progress=Math.min(10,state.pending);$('deck-batch-count').textContent=`${state.pending} / 10`;$('session-ring').style.setProperty('--progress',String(progress/10));$('session-ring').setAttribute('aria-valuenow',String(progress));$('session-count').textContent=String(state.pending);$('session-mode').textContent=state.running?'RETUNING':'LOCAL SIM';
+  $('session-headline').textContent=state.running?'Snapshot locked.':state.pending>=10&&!state.ready?'Waiting for fresh inputs.':state.pending?`${Math.max(0,10-state.pending)} views to your next solve.`:'Make your first move.';
   $('session-description').textContent=state.running?'The circuit is retuning. New views start the next batch.':state.pending>=10&&!state.ready?'All four markets need fresh eligible inputs. Your positions are held.':'Ten new directional views freeze one joint problem. Skips don’t count.';
   $('mini-optimize').disabled=state.running||!state.ready;$('quantum-orbit').classList.toggle('running',state.running);
   const dots=$('batch-dots');dots.replaceChildren();for(let i=0;i<10;i++){const dot=document.createElement('span');dot.className='batch-dot'+(i<progress?' filled':'');dots.append(dot);}

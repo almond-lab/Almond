@@ -289,6 +289,7 @@ $('export-reactions').addEventListener('click', () => {
 });
 if ($('clear-reactions')) $('clear-reactions').addEventListener('click', () => { reactions = {}; history = []; seen.clear(); skipped.clear(); portfolio.clear(); save(); message('Directional views cleared. Your paper positions are held.'); renderDeck(); });
 document.addEventListener('keydown', event => {
+  if (document.body.dataset.view && document.body.dataset.view !== 'swipe') return;
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.target.closest('input,select,textarea,button,a,[contenteditable]')) return;
   if (event.key === 'ArrowRight') { event.preventDefault(); react('agree'); }
   else if (event.key === 'ArrowLeft') { event.preventDefault(); react('disagree'); }

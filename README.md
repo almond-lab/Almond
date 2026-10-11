@@ -4,7 +4,7 @@
 
 Read actual market-relevant X posts. Swipe right for a bullish next-24-hours view, left for bearish. Smooth touch and mouse gestures, velocity-aware release, spring-back, keyboard controls, optional haptics, immediate conviction feedback and ten-view snapshot progress make the interaction responsive. Views are preferences, not return forecasts or profit probabilities.
 
-The workspace has three views: **Swipe**, **Portfolio**, and **Quantum lab**. GC Artum, orange, warm cream and dark surfaces continue the supplied brand system. The root page and `/signals.html` both open QSwipe. `/markets.html` keeps the live order-book observatory; `/quantum.html` keeps the protected manual IonQ connector.
+The workspace opens with the swipe deck and has four views: **Swipe**, **Portfolio**, **How it works**, and **Quantum lab**. The six-step interactive guide explains market context, capped convictions, the joint objective, qubit encoding, QAOA stages and sampled-versus-exact comparison. Its teaching examples are isolated from live preferences and the paper account. GC Artum, orange, warm cream and dark surfaces continue the supplied brand system. The root page and `/signals.html` both open QSwipe. `/markets.html` keeps the live order-book observatory; `/quantum.html` keeps the protected manual IonQ connector.
 
 ## Run the web app
 
@@ -19,7 +19,7 @@ npm test
 npm run build
 ```
 
-The Vercel build emits static assets, API functions and `qswipe-qollab.zip`. Public Hyperliquid books and metadata require no trading credentials. Without server X credentials, the app shows an explicit connection state and never invents posts.
+The Vercel build emits static assets, API functions, `qswipe-qollab.zip` and `qswipe-qollab-js.zip`. Public Hyperliquid books and metadata require no trading credentials. Without server X credentials, the app shows an explicit connection state and never invents posts.
 
 ## Execute the circuit on Qollab
 
