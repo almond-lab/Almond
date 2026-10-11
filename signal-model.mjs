@@ -37,7 +37,9 @@ export function reactionCounts(reactions, market = 'all') {
   return { reviewed: entries.length, agree: entries.filter(r => r.decision === 'agree').length, disagree: entries.filter(r => r.decision === 'disagree').length };
 }
 
-export function swipeDecision(dx, dy, width) {
+export function swipeDecision(dx, dy, width, velocity = 0) {
+  if (![dx,dy,width,velocity].every(Number.isFinite) || width<=0) return null;
   const threshold = Math.min(130, Math.max(65, width * .23));
-  return Math.abs(dx) >= threshold && Math.abs(dx) > Math.abs(dy) * 1.25 ? (dx > 0 ? 'agree' : 'disagree') : null;
+  const flick=Math.abs(dx)>=42 && Math.abs(velocity)>=.55 && Math.sign(velocity)===Math.sign(dx);
+  return (Math.abs(dx) >= threshold || flick) && Math.abs(dx) > Math.abs(dy) * 1.25 ? (dx > 0 ? 'agree' : 'disagree') : null;
 }

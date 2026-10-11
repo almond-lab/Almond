@@ -1,0 +1,39 @@
+QSWIPE · REPRODUCIBLE LOCAL TEACHING CHECK
+
+Synthetic inputs from snapshot.json; seed 731.
+Tested with Python 3.13, Qiskit 2.5.2, Qiskit Aer 0.17.2, NumPy 2.5.4.
+These are actual local simulator outputs, not a hardware/provider execution.
+No elapsed-time comparison or quantum speedup is inferred.
+
+Command: python local_demo.py --seed 731
+CPU training: 48 exact state-vector expectation evaluations.
+Mean objective: 2.783989068 -> 0.496493619.
+One subsequent Aer circuit job, 1,024 returned shots.
+Encoding-valid / cap-feasible: 911 / 1,024 (88.96484375%).
+Exact-optimal outcome returned: 126 / 1,024 (12.3046875%).
+Best actually sampled choices: [long, long, short, long].
+Q0-first bitstring: 10|10|01|10, integer 101.
+Sampled objective: 0.3220686246.
+Independent exact 81-grid objective: 0.3220686246.
+Additive gap: 0 (within floating-point tolerance).
+Current zero-holdings objective: 0.5710774507.
+Minimum eligible improvement: 0.0001 (objective units).
+
+Equal final-shot-budget random baselines:
+Raw 256 strings: 1,024 draws, 357 valid (34.86328125%), best gap ~0.
+Valid 81 portfolios: 1,024 draws, 1,024 valid (100%), best gap ~0.
+Both random baselines also found the exact grid optimum in this seed.
+They match the shot budget, not QAOA's additional CPU training budget.
+This check establishes no optimization or computation advantage.
+
+Command: python main.py --local
+Frozen unoptimized DOCX angles, no training, one Aer job/1,024 shots.
+151 valid / 1,024 (14.74609375%); exact-optimal frequency 0%.
+Best returned objective: 1.1059766627; gap 0.7839080381.
+The candidate fails the improvement-over-Hold guard. No trade is applied.
+The ideal valid probability for these untrained angles is 16.45523935%;
+finite-shot counts vary. This poor result is intentionally reported.
+
+The included snapshot is not overwritten by either command. Dependency
+versions, RNG implementations and machine timings can affect reproduction.
+All P&L, funding and market execution remain separate from this score.

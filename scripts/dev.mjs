@@ -6,7 +6,7 @@ import { handleXFeed } from '../server/x-feed-service.mjs';
 import './build.mjs';
 
 const root = resolve('dist');
-const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.png': 'image/png', '.otf': 'font/otf' };
+const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.svg':'image/svg+xml', '.zip':'application/zip', '.png': 'image/png', '.otf': 'font/otf' };
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://127.0.0.1:3000');
@@ -29,4 +29,4 @@ createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': types[extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff' });
     res.end(req.method === 'HEAD' ? undefined : bytes);
   } catch { res.writeHead(404); res.end('Not found'); }
-}).listen(3000, '127.0.0.1', () => console.log('Almond frontend and API: http://127.0.0.1:3000'));
+}).listen(3000, '127.0.0.1', () => console.log('QSwipe frontend and API: http://127.0.0.1:3000'));

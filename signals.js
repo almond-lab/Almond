@@ -3,7 +3,7 @@ import { PortfolioController } from './portfolio-controller.mjs';
 
 // Older agreement reactions are not reinterpreted as directional price views.
 const REACTION_KEY = 'almond.pulse.directional-reactions.v2';
-const portfolio = new PortfolioController();
+export const portfolio = new PortfolioController();
 
 const $ = id => document.getElementById(id);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -86,8 +86,7 @@ function card(post) {
   article.addEventListener('pointercancel', cancelDrag);
   article.addEventListener('lostpointercapture', cancelDrag);
   article.addEventListener('click', event => {
-    if (article.dataset.suppressClick === 'true') { event.preventDefault(); event.stopPropagation(); return; }
-    if (!event.target.closest('a') && !window.getSelection()?.toString()) window.open(post.url, '_blank', 'noopener,noreferrer');
+    if (article.dataset.suppressClick === 'true') { event.preventDefault(); event.stopPropagation(); }
   });
   return article;
 }
@@ -127,6 +126,7 @@ function renderDeck(preferredId) {
   const candidates = selectPosts(posts, { market, filter: $('review-filter').value, sort: $('feed-sort').value, reactions, skipped });
   current = candidates.find(p => p.id === preferredId) || candidates.find(p => !seen.has(p.id)) || null;
   portfolio.setPost(current);
+  document.querySelector('.backcard-one').style.transform='';
   const deck = $('deck'); deck.replaceChildren();
   $('market-label').textContent = marketName(market);
   if ($('filter-label')) $('filter-label').textContent = `${candidates.filter(p => !seen.has(p.id)).length} posts in this view`;
@@ -161,7 +161,8 @@ async function react(decision) {
   article?.classList.add(decision === 'agree' ? 'is-agreeing' : 'is-disagreeing');
   if (article && !reducedMotion.matches) {
     const direction = decision === 'agree' ? 1 : -1;
-    await article.animate([{ transform: getComputedStyle(article).transform, opacity: 1 }, { transform: `translateX(${direction * Math.min(innerWidth, 700)}px) rotate(${direction * 16}deg)`, opacity: 0 }], { duration: 280, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'forwards' }).finished.catch(() => {});
+    article.style.animation='none';
+    await article.animate([{ transform: getComputedStyle(article).transform, opacity: 1 }, { transform: `translate3d(${direction * Math.min(innerWidth, 760)}px,-25px,0) rotate(${direction * 17}deg)`, opacity: 0 }], { duration: 210, easing: 'cubic-bezier(.24,.72,.32,1)', fill: 'forwards' }).finished.catch(() => {});
   }
   if (token !== generation) return;
   const eventId = portfolio.record(post, decision === 'agree' ? 1 : -1, coin);
@@ -176,11 +177,13 @@ async function react(decision) {
 function beginDrag(event) {
   if (busy || !current || isStale() || !event.isPrimary || event.button !== 0 || event.target.closest('a')) return;
   const article = event.currentTarget;
-  pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, dx: 0, dy: 0, article, horizontal: false, vertical: false };
+  article.style.animation='none';
+  pointer = { id:event.pointerId,x:event.clientX,y:event.clientY,lastX:event.clientX,lastTime:event.timeStamp,velocity:0,raf:0,dx:0,dy:0,article,horizontal:false,vertical:false };
   article.dataset.suppressClick = 'false';
 }
 function moveDrag(event) {
   if (!pointer || pointer.id !== event.pointerId) return;
+  const dt=Math.max(1,event.timeStamp-pointer.lastTime);pointer.velocity=.35*pointer.velocity+.65*(event.clientX-pointer.lastX)/dt;pointer.lastX=event.clientX;pointer.lastTime=event.timeStamp;
   pointer.dx = event.clientX - pointer.x; pointer.dy = event.clientY - pointer.y;
   if (!pointer.horizontal && !pointer.vertical) {
     if (Math.abs(pointer.dx) > 12 && Math.abs(pointer.dx) > Math.abs(pointer.dy) * 1.25) { pointer.horizontal = true; pointer.article.setPointerCapture(event.pointerId); }
@@ -190,29 +193,33 @@ function moveDrag(event) {
   event.preventDefault();
   pointer.article.dataset.suppressClick = 'true';
   pointer.article.classList.add('is-dragging');
-  pointer.article.style.transform = `translateX(${pointer.dx}px) rotate(${pointer.dx / 28}deg)`;
-  const confidence = Math.min(1, Math.abs(pointer.dx) / 130);
-  pointer.article.style.setProperty('--agree-opacity', pointer.dx > 0 ? confidence : 0);
-  pointer.article.style.setProperty('--disagree-opacity', pointer.dx < 0 ? confidence : 0);
+  if(!pointer.raf){const p=pointer;p.raf=requestAnimationFrame(()=>{p.raf=0;if(pointer!==p)return;p.article.style.transform=`translate3d(${p.dx}px,${Math.min(12,Math.abs(p.dx)*.035)}px,0) rotate(${p.dx/30}deg)`;const confidence=Math.min(1,Math.abs(p.dx)/95);p.article.style.setProperty('--agree-opacity',p.dx>0?confidence:0);p.article.style.setProperty('--disagree-opacity',p.dx<0?confidence:0);document.querySelector('.backcard-one').style.transform=`translateY(${7-confidence*4}px) rotate(${-2+confidence}deg) scale(${1+confidence*.01})`;});}
 }
 function cancelDrag(event) {
   if (!pointer) return;
   // Touch starts with implicit capture on a child; transferring it to the card
   // produces a bubbled loss event from that child, not a canceled gesture.
   if (event?.type === 'lostpointercapture' && (event.target !== pointer.article || pointer.article.hasPointerCapture(pointer.id))) return;
-  const { article } = pointer; pointer = null;
-  article.classList.remove('is-dragging'); article.style.transform = ''; article.style.removeProperty('--agree-opacity'); article.style.removeProperty('--disagree-opacity');
+  const { article,raf } = pointer;cancelAnimationFrame(raf);pointer = null;
+  springBack(article);
   setTimeout(() => { article.dataset.suppressClick = 'false'; }, 200);
 }
 function endDrag(event) {
   if (!pointer || pointer.id !== event.pointerId) return;
   const p = pointer;
-  const decision = p.horizontal ? swipeDecision(p.dx, p.dy, p.article.offsetWidth) : null;
-  pointer = null;
+  const velocity=event.timeStamp-p.lastTime>100?0:p.velocity;
+  const decision = p.horizontal ? swipeDecision(p.dx, p.dy, p.article.offsetWidth,velocity) : null;
+  cancelAnimationFrame(p.raf);pointer = null;
   if (p.article.hasPointerCapture(event.pointerId)) p.article.releasePointerCapture(event.pointerId);
   if (decision) { react(decision); return; }
-  p.article.classList.remove('is-dragging'); p.article.style.transform = ''; p.article.style.removeProperty('--agree-opacity'); p.article.style.removeProperty('--disagree-opacity');
+  springBack(p.article);
   setTimeout(() => { p.article.dataset.suppressClick = 'false'; }, 200);
+}
+
+function springBack(article){
+  const start=getComputedStyle(article).transform;
+  article.classList.remove('is-dragging');article.style.transform='';article.style.removeProperty('--agree-opacity');article.style.removeProperty('--disagree-opacity');document.querySelector('.backcard-one').style.transform='';
+  if(!reducedMotion.matches&&start!=='none')article.animate([{transform:start},{transform:'translate3d(0,0,0) rotate(0deg)',offset:.72},{transform:'translate3d(0,0,0) rotate(0deg)'}],{duration:310,easing:'cubic-bezier(.16,1.3,.28,1)'});
 }
 
 function updateMarketLinks() {

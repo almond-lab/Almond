@@ -1,8 +1,8 @@
 {
-  "name": "almond-benchmark",
+  "name": "qswipe",
   "version": "1.0.0",
   "private": true,
-  "description": "Almond quantum and classical benchmark explorer for the Qollab hackathon",
+  "description": "QSwipe preference-aware portfolios and quantum circuit explorer for the Qollab hackathon",
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "node --test tests/*.test.mjs",

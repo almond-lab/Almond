@@ -8,8 +8,9 @@ export const COINS = Object.freeze(['BTC', 'xyz:SP500', 'xyz:BRENTOIL', 'xyz:GOL
 export const DEFAULTS = Object.freeze({
   slot: .2, grossLimit: .8, horizonHours: 24, decayHalfLifeHours: 24,
   evidenceWeight: .5, thesisCap: 1, localShots: 1024, layers: 2,
-  evaluationBudget: 48, beliefWeight: 1, riskWeight: .25,
-  turnoverWeight: 10, fundingWeight: 1, riskNormalization: .01,
+  evaluationBudget: 48, beliefWeight: 1, riskWeight: .15,
+  turnoverWeight: .5, fundingWeight: 1, riskNormalization: .0004,
+  moneyNormalization: .001, invalidPenalty: .5, minimumImprovement: .0001,
   feeRate: .0005, spreadBps: 2, slippageBps: 1,
 });
 const DIMENSION = 256;
@@ -23,8 +24,8 @@ function settingsFor(input = {}) {
   const settings = { ...DEFAULTS, ...input };
   for (const key of Object.keys(DEFAULTS)) settings[key] = finite(settings[key], key);
   if (settings.slot <= 0 || settings.slot > DEFAULTS.slot || settings.grossLimit <= 0 || settings.grossLimit > DEFAULTS.grossLimit) throw new RangeError('Slot and gross limit must be positive and cannot exceed the 20% / 80% model limits');
-  for (const key of ['horizonHours', 'decayHalfLifeHours', 'riskNormalization']) if (settings[key] <= 0) throw new RangeError(`${key} must be positive`);
-  for (const key of ['evidenceWeight', 'thesisCap', 'beliefWeight', 'riskWeight', 'turnoverWeight', 'fundingWeight', 'feeRate', 'spreadBps', 'slippageBps']) if (settings[key] < 0) throw new RangeError(`${key} cannot be negative`);
+  for (const key of ['horizonHours', 'decayHalfLifeHours', 'riskNormalization', 'moneyNormalization', 'invalidPenalty']) if (settings[key] <= 0) throw new RangeError(`${key} must be positive`);
+  for (const key of ['evidenceWeight', 'thesisCap', 'beliefWeight', 'riskWeight', 'turnoverWeight', 'fundingWeight', 'feeRate', 'spreadBps', 'slippageBps', 'minimumImprovement']) if (settings[key] < 0) throw new RangeError(`${key} cannot be negative`);
   if (settings.thesisCap > 1) throw new RangeError('Same-thesis evidence cap cannot exceed 1');
   for (const [key, maximum] of [['localShots', 4096], ['layers', 2], ['evaluationBudget', 48]]) if (!Number.isInteger(settings[key]) || settings[key] < 1 || settings[key] > maximum) throw new RangeError(`${key} must be an integer from 1 to ${maximum}`);
   return settings;
@@ -40,7 +41,8 @@ export function conviction(events = [], now = Date.now(), settings = {}) {
     const old = unique.get(key);
     if (!old || Number(event.at) >= Number(old.at)) unique.set(key, event);
   }
-  return COINS.map(coin => {
+  const priors = opts.initialConvictions == null ? [0,0,0,0] : vector(opts.initialConvictions, 'initialConvictions', (value,i) => clamp(finite(value, `initialConvictions[${i}]`), -.999999999999, .999999999999));
+  return COINS.map((coin, coinIndex) => {
     const grouped = new Map();
     for (const event of unique.values()) {
       if (event.coin !== coin) continue;
@@ -51,7 +53,7 @@ export function conviction(events = [], now = Date.now(), settings = {}) {
     }
     const theses = Array.from(grouped, ([thesis, rawEvidence]) => ({ thesis, rawEvidence, evidence: clamp(rawEvidence, -opts.thesisCap, opts.thesisCap) }));
     const evidence = theses.reduce((sum, item) => sum + item.evidence, 0);
-    return { coin, score: Math.tanh(opts.evidenceWeight * evidence), evidence, theses };
+    return { coin, score: Math.tanh(Math.atanh(priors[coinIndex]) + opts.evidenceWeight * evidence), evidence, theses };
   });
 }
 function vector(input, name, mapper = (v, i) => finite(v, `${name}[${i}]`)) {
@@ -124,8 +126,8 @@ function rawFinance(snapshot, choices) {
   variance = Math.max(0, variance * s.horizonHours / 24);
   const beliefMismatch = s.beliefWeight * choices.reduce((total, choice, i) => total + (choice - snapshot.convictions[i]) ** 2, 0) / 4;
   const jointRisk = s.riskWeight * variance / s.riskNormalization;
-  const turnoverCost = s.turnoverWeight * turnoverFraction;
-  const funding = s.fundingWeight * fundingFraction;
+  const turnoverCost = s.turnoverWeight * turnoverFraction / s.moneyNormalization;
+  const funding = s.fundingWeight * fundingFraction / s.moneyNormalization;
   return { weights, oldWeights, gross: weights.reduce((sum, weight) => sum + Math.abs(weight), 0),
     beliefMismatch, jointRisk, turnover: turnoverCost, turnoverCost, funding, invalidEncoding: 0,
     turnoverFractions: turnover, turnoverDollars: turnoverFraction * snapshot.equity,
@@ -143,17 +145,28 @@ export function financeMetrics(snapshotInput, choices) {
   const { breakdown } = evaluateChoices(snapshotInput, choices);
   return Object.fromEntries(['weights', 'oldWeights', 'gross', 'turnoverDollars', 'fundingDollars', 'portfolioVariance', 'portfolioVolatility'].map(key => [key, breakdown[key]]));
 }
-function rawChoices(state) { return COINS.map((_, i) => ((state >> (2 * i)) & 1) - ((state >> (2 * i + 1)) & 1)); }
-function costBound(snapshot) {
-  const s = snapshot.settings;
-  // Uniform bound over every permitted conviction in [-1,1]. Swipes alter
-  // linear belief fields only, never pair couplings or the invalid penalty.
-  const belief = s.beliefWeight * 4;
-  const risk = s.riskWeight * s.slot ** 2 * snapshot.covariance.flat().reduce((sum, c) => sum + Math.abs(c), 0) * s.horizonHours / 24 / s.riskNormalization;
-  const turnover = s.turnoverWeight * snapshot.holdings.reduce((sum, q, i) => sum + (s.slot + Math.abs(q * snapshot.prices[i] / snapshot.equity)) * frictionRate(snapshot.executionRates[i]), 0);
-  const funding = s.fundingWeight * s.slot * snapshot.fundingRates.reduce((sum, rate) => sum + Math.abs(rate), 0) * s.horizonHours;
-  return belief + risk + turnover + funding;
+/** Continuous marked current holdings are an extra Hold option outside the 81-grid. */
+export function evaluateHeld(snapshotInput) {
+  const snapshot=makeSnapshot(snapshotInput);
+  const weights=snapshot.holdings.map((q,i)=>q*snapshot.prices[i]/snapshot.equity);
+  const normalized=weights.map(w=>w/snapshot.settings.slot);
+  const breakdown=rawFinance(snapshot,normalized);
+  return { cost:breakdown.total,breakdown,weights,gross:breakdown.gross,
+    feasible:breakdown.gross<=snapshot.settings.grossLimit+EPS,
+    offGrid:normalized.some(x=>![-1,0,1].some(y=>Math.abs(x-y)<=EPS)),
+    label:'Continuous current holdings (Hold option; outside discrete reference grid)' };
 }
+export function compareWithHold(snapshotInput, selected) {
+  const snapshot=makeSnapshot(snapshotInput),held=evaluateHeld(snapshot);
+  const improvement=selected?held.cost-selected.cost:null;
+  return {heldCost:held.cost,candidateCost:selected?.cost??null,improvement,
+    minimumImprovement:snapshot.settings.minimumImprovement,
+    eligible:!!selected&&improvement>=snapshot.settings.minimumImprovement,
+    held,reason:!selected?'No feasible sampled candidate; hold current quantities.':
+      improvement<snapshot.settings.minimumImprovement?'Candidate does not exceed the stated minimum improvement over current holdings.':
+      'Candidate clears the objective improvement threshold; freshness and paper risk checks still apply.'};
+}
+function rawChoices(state) { return COINS.map((_, i) => ((state >> (2 * i)) & 1) - ((state >> (2 * i + 1)) & 1)); }
 /**
  * Exact 8-bit QUBO lifting. Within-asset absolute turnover is a four-entry
  * table on two binary variables, so its quadratic lift is exact.
@@ -166,15 +179,15 @@ export function buildObjective(snapshotInput) {
   const offset = rawFinance(snapshot, [0, 0, 0, 0]).total;
   const oldWeights = snapshot.holdings.map((q, i) => q*snapshot.prices[i]/snapshot.equity);
   const riskScale = s.riskWeight*s.horizonHours/24/s.riskNormalization;
-  const turnoverFor = (asset, choice) => s.turnoverWeight*frictionRate(snapshot.executionRates[asset])*Math.abs(choice*s.slot-oldWeights[asset]);
+  const turnoverFor = (asset, choice) => s.turnoverWeight*frictionRate(snapshot.executionRates[asset])*Math.abs(choice*s.slot-oldWeights[asset])/s.moneyNormalization;
   const linear = Array.from({ length: 8 }, (_, bit) => {
     const asset = Math.floor(bit/2), sign = bit%2 === 0 ? 1 : -1;
     return s.beliefWeight*(1-2*sign*snapshot.convictions[asset])/4
       +riskScale*s.slot*s.slot*snapshot.covariance[asset][asset]
       +turnoverFor(asset, sign)-turnoverFor(asset, 0)
-      +s.fundingWeight*sign*s.slot*snapshot.fundingRates[asset]*s.horizonHours;
+      +s.fundingWeight*sign*s.slot*snapshot.fundingRates[asset]*s.horizonHours/s.moneyNormalization;
   });
-  const bound = costBound(snapshot), invalidPenalty = 2*bound+1;
+  const invalidPenalty = s.invalidPenalty;
   const pairs = [];
   for (let i=0; i<8; i++) for (let j=i+1; j<8; j++) {
     const a=Math.floor(i/2), b=Math.floor(j/2), signI=i%2===0?1:-1, signJ=j%2===0?1:-1;
@@ -184,7 +197,7 @@ export function buildObjective(snapshotInput) {
       : 2*riskScale*s.slot*s.slot*snapshot.covariance[a][b]*signI*signJ;
     pairs.push({i,j,coefficient});
   }
-  if (![offset,bound,invalidPenalty,...linear,...pairs.map(pair=>pair.coefficient)].every(Number.isFinite)) throw new RangeError('Snapshot objective exceeds finite numeric bounds');
+  if (![offset,invalidPenalty,...linear,...pairs.map(pair=>pair.coefficient)].every(Number.isFinite)) throw new RangeError('Snapshot objective exceeds finite numeric bounds');
   const evaluateState = state => {
     if (!Number.isInteger(state) || state < 0 || state >= DIMENSION) throw new RangeError('State must be an integer from 0 to 255');
     let cost = offset;
@@ -201,7 +214,7 @@ export function buildObjective(snapshotInput) {
     data.total += data.invalidEncoding;
     return data;
   };
-  return { snapshotId: snapshot.id, linear, pairs, offset, invalidPenalty, absoluteFinanceBound: bound,
+  return { snapshotId: snapshot.id, linear, pairs, offset, invalidPenalty, penaltyProof: 'Repairing each 11 pair to 00 preserves economic exposures and lowers the objective by P',
     evaluateState, costBreakdown, encoding: { qubits: 8, displayOrder: 'q0 first (leftmost)', pairs: COINS.map((coin, i) => ({ coin, long: 2*i, short: 2*i+1, invalid: '11' })) } };
 }
 /** Independent classical reference enumerates the 3^4 choices, not QUBO states. */
@@ -259,20 +272,35 @@ export function selectSampled(snapshotInput, counts, objectiveInput) {
   let selected = null;
   const distribution = [], exact = solveExact(snapshot);
   const shots = Array.from(counts).reduce((sum, n) => sum+n, 0);
-  let feasibleSamples = 0, optimalSamples = 0;
+  let feasibleSamples = 0, validSamples = 0, optimalSamples = 0;
   for (let state = 0; state < DIMENSION; state++) {
     const count = counts[state]; if (!count) continue;
     const choices = stateToChoices(state), breakdown = objective.costBreakdown(state), cost = objective.evaluateState(state);
     const feasible = !!choices && breakdown.gross <= snapshot.settings.grossLimit + EPS;
     distribution.push({ state, bitstring: stateBitstring(state), choices, count, probability: shots ? count/shots : 0, cost, feasible });
+    if (choices) validSamples += count;
     if (!feasible) continue;
     feasibleSamples += count;
     if (exact && Math.abs(cost - exact.cost) <= EPS) optimalSamples += count;
     if (!selected || cost < selected.cost - EPS || (Math.abs(cost-selected.cost) <= EPS && state < selected.state)) selected = { state, bitstring: stateBitstring(state), choices, cost, breakdown, count };
   }
   return { distribution, selected, exact, gap: selected && exact ? Math.max(0, selected.cost-exact.cost) : null,
-    metrics: { shots, feasibleSamples, feasibleRate: shots ? feasibleSamples/shots : 0, optimalFrequency: shots ? optimalSamples/shots : 0 },
+    metrics: { shots, validSamples, validityRate: shots ? validSamples/shots : 0, feasibleSamples, feasibleRate: shots ? feasibleSamples/shots : 0, optimalFrequency: shots ? optimalSamples/shots : 0 },
     holdReason: selected ? null : 'No gross-feasible valid portfolio was sampled. Hold current quantities; no exact-reference fallback.' };
+}
+/** Both classical random baselines have exactly the same returned-shot budget. */
+export function randomSamplingBaselines(snapshotInput, seed=1) {
+  const snapshot=makeSnapshot(snapshotInput),shots=snapshot.settings.localShots;
+  const objective=buildObjective(snapshot),validStates=[];
+  for(let state=0;state<DIMENSION;state++)if(stateToChoices(state))validStates.push(state);
+  const baseline=(name,candidates,baselineSeed)=>{
+    const rng=seededRandom(baselineSeed),counts=new Uint32Array(DIMENSION);
+    for(let i=0;i<shots;i++)counts[candidates[Math.floor(rng()*candidates.length)]]++;
+    return {name,seed:baselineSeed,expectedValidityRate:candidates.length===DIMENSION?81/256:1,
+      ...selectSampled(snapshot,counts,objective)};
+  };
+  return {rawBits:baseline('Uniform raw 256 bitstrings',Array.from({length:DIMENSION},(_,i)=>i),`${seed}:raw`),
+    validPortfolios:baseline('Uniform valid 81 portfolios',validStates,`${seed}:valid`)};
 }
 /** Fixed-budget warm-started coordinate/random tuning against exact CPU expectations. */
 export function optimizeLocal(snapshotInput, previousAngles = null, seed = 1, testOptions = {}) {
@@ -302,7 +330,10 @@ export function optimizeLocal(snapshotInput, previousAngles = null, seed = 1, te
   const sampled = clock(), referenceStarted = clock();
   const outcome = selectSampled(snapshot, counts, objective), finished = clock();
   const circuit = buildIonQCircuit(snapshot, angles);
-  return { snapshotId: snapshot.id, snapshotVersion: snapshot.version, angles, ...outcome,
+  const holdComparison=compareWithHold(snapshot,outcome.selected);
+  const baselineStarted=clock(),randomBaselines=randomSamplingBaselines(snapshot,seed),baselineFinished=clock();
+  return { snapshotId: snapshot.id, snapshotVersion: snapshot.version, seed, angles, ...outcome, holdComparison, randomBaselines,
+    benchmarkBudgetNote: 'Random baselines match final shots only; QAOA additionally uses exact CPU state-vector training evaluations. This is not a total-compute-matched speedup comparison.',
     metrics: { ...outcome.metrics, evaluations, expectedCost: best.expectedCost, initialExpectedCost,
       warmStarted: initialization.warmStarted, normalization: best.normalization,
       training: 'Exact local CPU state-vector expectation; not shot-estimated or QPU training' },
@@ -310,8 +341,8 @@ export function optimizeLocal(snapshotInput, previousAngles = null, seed = 1, te
       statevectorAmplitudes: DIMENSION, shots, oracleCalls: 0, candidates: 81,
       classicalReference: 'Exhaustive 81-portfolio CPU search', costLayers: snapshot.settings.layers,
       encoding: objective.encoding },
-    timing: { retuneMs: tuned-started, samplingMs: sampled-tuned, referenceMs: finished-referenceStarted, totalMs: finished-started },
-    methodology: 'Joint bounded QAOA model simulated classically; modeled covariance and friction. No quantum speedup or measured trading performance claim.' };
+    timing: { retuneMs: tuned-started, samplingMs: sampled-tuned, referenceMs: finished-referenceStarted, randomBaselineMs: baselineFinished-baselineStarted, totalMs: clock()-started },
+    methodology: 'QSwipe joint bounded QAOA model simulated classically; DOCX teaching normalization, modeled covariance and friction. No quantum speedup or measured trading performance claim.' };
 }
 /** QIS rotation is radians: https://docs.ionq.com/api-reference/v0.3/writing-quantum-programs */
 export function buildIonQCircuit(snapshotInput, angles) {

@@ -6,6 +6,6 @@ if (typeof self !== 'undefined') self.onmessage = event => {
     const result = optimizeLocal(snapshot, previousAngles, seed);
     self.postMessage({ type: 'result', snapshotId: result.snapshotId, result });
   } catch (error) {
-    self.postMessage({ type: 'error', snapshotId: snapshot?.id ?? null, error: error instanceof Error ? error.message : String(error) });
+    self.postMessage({ type: 'error', snapshotId: snapshot?.id ?? null, error: error instanceof Error ? error.message : String(error), message: error instanceof Error ? error.message : String(error) });
   }
 };

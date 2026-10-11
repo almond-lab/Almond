@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { COINS, DEFAULTS, conviction, makeSnapshot, stateToChoices, choicesToState,
-  stateBitstring, evaluateChoices, financeMetrics, buildObjective, solveExact,
+  stateBitstring, evaluateChoices, evaluateHeld, compareWithHold, financeMetrics, buildObjective, solveExact, randomSamplingBaselines,
   simulateQaoa, optimizeLocal, selectSampled, buildIonQCircuit } from '../portfolio-model.mjs';
 const close = (a,b,tolerance=1e-9) => assert.ok(Math.abs(a-b)<=tolerance, `${a} != ${b}`);
 function fixture(overrides={}) {
@@ -50,19 +50,19 @@ function independentFinance(snapshot,choices){
   const mismatch=choices.reduce((sum,x,i)=>sum+(x-snapshot.convictions[i])**2,0)/4;
   const turnover=w.reduce((sum,x,i)=>{const r=snapshot.executionRates[i];return sum+Math.abs(x-old[i])*(r.feeRate+r.spreadBps/20000+r.slippageBps/10000)},0);
   const funding=w.reduce((sum,x,i)=>sum+x*snapshot.fundingRates[i]*s.horizonHours,0);
-  return s.beliefWeight*mismatch+s.riskWeight*variance/s.riskNormalization+s.turnoverWeight*turnover+s.fundingWeight*funding;
+  return s.beliefWeight*mismatch+s.riskWeight*variance/s.riskNormalization+s.turnoverWeight*turnover/s.moneyNormalization+s.fundingWeight*funding/s.moneyNormalization;
 }
 test('QUBO is identical to independently computed joint finance objective for all 81 portfolios',()=>{
   for(const snapshot of [fixture(),fixture({convictions:[-.1,.99,-.8,0],settings:{horizonHours:36,riskWeight:2,turnoverWeight:7},executionRates:[.001,.002,.0005,.0004]})]){
     const objective=buildObjective(snapshot);assert.equal(objective.linear.length,8);assert.equal(objective.pairs.length,28);
-    let maxFeasible=-Infinity,minInvalid=Infinity;
+    let minFeasible=Infinity,minInvalid=Infinity;
     for(let state=0;state<256;state++){
       const choices=stateToChoices(state),cost=objective.evaluateState(state),breakdown=objective.costBreakdown(state);
       close(cost,breakdown.total);
-      if(choices){const expected=independentFinance(snapshot,choices);close(cost,expected);close(cost,evaluateChoices(snapshot,choices).cost);maxFeasible=Math.max(maxFeasible,cost)}
-      else{assert.ok(breakdown.invalidEncoding>0);minInvalid=Math.min(minInvalid,cost)}
+      if(choices){const expected=independentFinance(snapshot,choices);close(cost,expected);close(cost,evaluateChoices(snapshot,choices).cost);minFeasible=Math.min(minFeasible,cost)}
+      else{assert.ok(breakdown.invalidEncoding>0);minInvalid=Math.min(minInvalid,cost);let repaired=state,invalidCount=0;for(let asset=0;asset<4;asset++)if(((state>>(2*asset))&3)===3){repaired&=~(3<<(2*asset));invalidCount++}close(cost-objective.evaluateState(repaired),invalidCount*.5)}
     }
-    assert.ok(minInvalid>maxFeasible,'every invalid encoding must be worse than every feasible portfolio');
+    assert.ok(minInvalid>minFeasible,'invalid encodings cannot be global minima; each repair lowers cost by fixed .5');
     const reference=solveExact(snapshot);close(reference.cost,independentFinance(snapshot,reference.choices));
     for(let state=0;state<256;state++){const choices=stateToChoices(state);if(choices)assert.ok(reference.cost<=independentFinance(snapshot,choices)+1e-10)}
   }
@@ -115,7 +115,7 @@ test('IonQ QIS circuit reproduces local amplitudes up to global phase with rotat
 });
 test('fixed-budget tuning, genuine seeded shots, sampled selection and independent truth metrics',()=>{
   const snapshot=fixture(),result=optimizeLocal(snapshot,null,'stable-seed'),again=optimizeLocal(snapshot,null,'stable-seed');
-  assert.equal(result.snapshotId,snapshot.id);assert.equal(result.metrics.evaluations,48);assert.equal(result.metrics.shots,1024);
+  assert.equal(result.snapshotId,snapshot.id);assert.equal(result.seed,'stable-seed');assert.equal(result.metrics.evaluations,48);assert.equal(result.metrics.shots,1024);
   assert.equal(result.distribution.reduce((sum,x)=>sum+x.count,0),1024);assert.deepEqual(result.distribution,again.distribution);
   assert.ok(result.metrics.expectedCost<=result.metrics.initialExpectedCost+1e-12);close(result.metrics.normalization,1,1e-12);
   assert.ok(result.selected);assert.ok(result.distribution.find(x=>x.state===result.selected.state&&x.feasible&&x.count>0));
@@ -136,4 +136,55 @@ test('custom tighter gross is honestly post-filtered, with one feasible referenc
   const snapshot=fixture({settings:{grossLimit:.2}}),result=optimizeLocal(snapshot,null,9);
   assert.ok(result.exact.breakdown.gross<=.2+1e-10);if(result.selected)assert.ok(result.selected.breakdown.gross<=.2+1e-10);
   const counts=new Uint32Array(256);counts[choicesToState([1,1,1,1])]=10;assert.equal(selectSampled(snapshot,counts).selected,null);
+});
+
+function docFixture(convictions=[.35,.8,-.72,.67]) {
+  const vol=[.04,.012,.025,.015],corr=[[1,.39107,.22063,.02425],[.39107,1,.30847,.19912],[.22063,.30847,1,.11234],[.02425,.19912,.11234,1]];
+  return fixture({id:'doc-teaching-example',holdings:[0,0,0,0],convictions,
+    covariance:corr.map((row,i)=>row.map((v,j)=>v*vol[i]*vol[j])),
+    executionRates:[.0005,.0003,.0005,.0004],fundingRates:[.0001,.00005,-.00008,.00003].map(rate=>rate/24)});
+}
+test('attached document teaching defaults and worked example match six-decimal figures',()=>{
+  assert.equal(DEFAULTS.riskWeight,.15);assert.equal(DEFAULTS.riskNormalization,.0004);
+  assert.equal(DEFAULTS.turnoverWeight,.5);assert.equal(DEFAULTS.moneyNormalization,.001);assert.equal(DEFAULTS.invalidPenalty,.5);
+  const before=docFixture(),afterScore=Math.tanh(Math.atanh(.35)+.8),after=docFixture([afterScore,.8,-.72,.67]);
+  close(afterScore,.8228060541124633,1e-14);
+  const priorUpdate=conviction([{id:'worked-bullish-view',coin:'BTC',direction:1,thesis:'BTC adoption',at:1000}],1000,{initialConvictions:[.35,.8,-.72,.67],evidenceWeight:.8});
+  close(priorUpdate[0].score,afterScore,1e-14);close(priorUpdate[1].score,.8,1e-14);
+  assert.deepEqual(solveExact(before).choices,[0,1,-1,1]);assert.deepEqual(solveExact(after).choices,[1,1,-1,1]);
+  const old=evaluateChoices(after,[0,1,-1,1]),next=evaluateChoices(after,[1,1,-1,1]);
+  close(old.breakdown.beliefMismatch,.226077,5e-7);close(next.breakdown.beliefMismatch,.064674,5e-7);
+  close(old.breakdown.jointRisk,.011945,5e-7);close(next.breakdown.jointRisk,.035394,5e-7);
+  close(old.breakdown.turnoverCost,.12);close(next.breakdown.turnoverCost,.17);
+  close(old.breakdown.funding,.032);close(next.breakdown.funding,.052);
+  close(old.cost,.390023,5e-7);close(next.cost,.322069,5e-7);close(old.cost-next.cost,.067954,5e-7);
+  close(solveExact(before).cost,.251395,5e-7);
+  const fields=snapshot=>{const objective=buildObjective(snapshot),h=objective.linear.map(v=>-v/2);for(const p of objective.pairs){h[p.i]-=p.coefficient/4;h[p.j]-=p.coefficient/4}return h};
+  close(fields(before)[0],-.0475);close(fields(before)[1],-.2025);close(fields(after)[0],.070702,5e-7);close(fields(after)[1],-.320702,5e-7);
+  const fixed=simulateQaoa(buildObjective(after),[.71,.33,1.12,.52]);
+  close(fixed.expectedCost,2.783989,5e-7);
+  close(fixed.probabilities.reduce((sum,p,state)=>sum+(stateToChoices(state)?p:0),0),.16455239347686212,1e-12);
+});
+test('equal-budget raw-bit and valid-grid random baselines are reproducible and report distinct validity/feasibility',()=>{
+  const snapshot=docFixture(),a=randomSamplingBaselines(snapshot,'baseline-seed'),b=randomSamplingBaselines(snapshot,'baseline-seed');
+  assert.deepEqual(a,b);
+  for(const baseline of Object.values(a)){
+    assert.equal(baseline.metrics.shots,1024);assert.equal(baseline.distribution.reduce((s,x)=>s+x.count,0),1024);
+    assert.ok(baseline.selected);close(baseline.selected.cost,Math.min(...baseline.distribution.filter(x=>x.feasible).map(x=>x.cost)));
+    close(baseline.gap,baseline.selected.cost-baseline.exact.cost);
+  }
+  assert.equal(a.rawBits.expectedValidityRate,81/256);assert.ok(Math.abs(a.rawBits.metrics.validityRate-81/256)<.06);
+  assert.equal(a.validPortfolios.metrics.validityRate,1);assert.equal(a.validPortfolios.metrics.feasibleRate,1);
+  const tight=randomSamplingBaselines(makeSnapshot({...snapshot,settings:{...snapshot.settings,grossLimit:.2}}),'baseline-seed');
+  assert.equal(tight.validPortfolios.metrics.validityRate,1);assert.ok(tight.validPortfolios.metrics.feasibleRate<1);
+  const result=optimizeLocal(snapshot,null,123);assert.ok(result.randomBaselines.rawBits);assert.ok(result.randomBaselines.validPortfolios);
+});
+test('continuous marked holdings are an extra Hold option with zero turnover and a stated improvement guard',()=>{
+  const base=docFixture(),snapshot=makeSnapshot({...base,holdings:[.123*base.equity/base.prices[0],-.07*base.equity/base.prices[1],0,.031*base.equity/base.prices[3]]});
+  const held=evaluateHeld(snapshot);assert.ok(held.offGrid);close(held.breakdown.turnoverCost,0);close(held.breakdown.turnoverDollars,0);
+  close(held.gross,.224);close(held.cost,independentFinance(snapshot,held.weights.map(w=>w/snapshot.settings.slot)));
+  const exact=solveExact(snapshot),comparison=compareWithHold(snapshot,exact);close(comparison.improvement,held.cost-exact.cost);assert.equal(comparison.minimumImprovement,.0001);
+  const unchanged={cost:held.cost,choices:null};assert.equal(compareWithHold(snapshot,unchanged).eligible,false);assert.equal(compareWithHold(snapshot,null).eligible,false);
+  const generous=makeSnapshot({...snapshot,settings:{...snapshot.settings,minimumImprovement:1e3}});assert.equal(compareWithHold(generous,exact).eligible,false);
+  const result=optimizeLocal(snapshot,null,456);close(result.holdComparison.heldCost,held.cost);assert.equal(result.holdComparison.eligible,result.selected!==null&&held.cost-result.selected.cost>=.0001);
 });

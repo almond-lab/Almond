@@ -1,304 +1,96 @@
-# Qollab Hackathon
+# QSwipe
 
-This repository is for the [Qollab hackathon](https://qollab.xyz/programs/hackathon).
+**A view changes everything.** A preference-aware portfolio playground for the [Qollab hackathon](https://qollab.xyz/programs/hackathon), by Almond.
 
-A responsive landing page and interactive template for comparing a classical
-baseline with Grover's quantum search algorithm, styled with Almond's supplied
-logo, GC Artum fonts, and Obsidian / Ember / Warm White palette.
+Read actual market-relevant X posts. Swipe right for a bullish next-24-hours view, left for bearish. Smooth touch and mouse gestures, velocity-aware release, spring-back, keyboard controls, optional haptics, immediate conviction feedback and ten-view snapshot progress make the interaction responsive. Views are preferences, not return forecasts or profit probabilities.
 
-The page includes animated orbital visuals with a pause control, benchmark
-scenario presets, an interactive scaling sweep, keyboard chart navigation, and
-reduced-motion support. The comparison export includes its model assumptions.
+The workspace has three views: **Swipe**, **Portfolio**, and **Quantum lab**. GC Artum, orange, warm cream and dark surfaces continue the supplied brand system. The root page and `/signals.html` both open QSwipe. `/markets.html` keeps the live order-book observatory; `/quantum.html` keeps the protected manual IonQ connector.
 
-## Run locally
+## Run the web app
 
-Run `npm run dev` and open `http://127.0.0.1:3000`.
-Run `npm run build` to create the deployable static site in `dist/`.
-No npm dependencies are required.
+Node 24 or newer, no package dependencies:
 
-## Hyperliquid trading lab
+```sh
+git clone https://github.com/almond-lab/QSwipe.git
+cd QSwipe
+npm run dev
+# http://127.0.0.1:3000
+npm test
+npm run build
+```
 
-Open `/markets.html` for live, read-only USDC perpetual order books:
+The Vercel build emits static assets, API functions and `qswipe-qollab.zip`. Public Hyperliquid books and metadata require no trading credentials. Without server X credentials, the app shows an explicit connection state and never invents posts.
 
-| Display market | Exact Hyperliquid API coin | Venue |
-| --- | --- | --- |
-| BTC/USDC | `BTC` | Native perpetuals |
-| S&P500/USDC | `xyz:SP500` | Trade[XYZ] HIP-3 |
-| BRENTOIL/USDC | `xyz:BRENTOIL` | Trade[XYZ] HIP-3 |
-| GOLD/USDC | `xyz:GOLD` | Trade[XYZ] HIP-3 |
+## Execute the circuit on Qollab
 
-The browser verifies live metadata, including USDC collateral (token 0), before
-subscribing to `l2Book` on `wss://api.hyperliquid.xyz/ws`. It displays up to 20
-levels per side, cumulative visible depth, midpoint, spread in basis points,
-and notional depth imbalance. This is a perpetuals view; BTC spot uses a
-different API identifier. Unavailable instruments are explicitly labelled.
+The **[qollab/ folder](qollab/README.md)** is independently runnable. It contains a labelled synthetic teaching snapshot, complete Python circuit code, requirements, local demo and reproducible example output. A website export is optional.
 
-Add each strategy's public master-account or subaccount address in the page.
-Use actual trading account addresses, not API agent/signing-wallet addresses.
-Addresses and optional client-order-ID prefixes are saved only in browser local
-storage. Separate subaccounts are preferred. Shared accounts require two
-non-overlapping hexadecimal client-ID prefixes; unmatched orders are omitted
-instead of guessing their strategy. Changing configuration resets session counts.
+1. Create a **Python / Qiskit** Qollab project.
+2. Upload `qollab/main.py` and `qollab/snapshot.json` together.
+3. Select a Qiskit-compatible backend. Qollab supplies `backend`; press Run once.
+4. Inspect the sampled portfolio, independent exact reference, cost gap, validity, cap feasibility, random baselines and continuous Hold comparison in stdout and `qollab_result.json`.
 
-Orders come from the public `frontendOpenOrders` endpoint on both native and
-`xyz` venues. `orderUpdates` and `openOrders` streams trigger reconciliation;
-terminal updates remove quotes immediately. REST snapshots also refresh every
-15 seconds. Public `orderStatus` calls enrich immutable client IDs and
-time-in-force in bounded batches (24 new orders per account per refresh).
-Large accounts may need successive refreshes to finish attribution. Triggers,
-market orders, zero-size orders, and assets outside these four are excluded.
-The page labels post-only only when `tif` is explicitly `Alo`; other resting
-limit orders are not assumed to have been submitted post-only.
+`main.py` calls `backend.run` exactly once. It does not train remotely, retry submissions, read provider credentials, or send exchange orders. Hardware availability depends on your Qollab backend; actual remote execution has not been verified here. `job.result().get_counts(0)` is the expected backend contract.
 
-Classical and quantum quote badges appear at matching price levels and on the
-depth chart. Orders beyond visible depth remain in the table. Strategy cards
-cover the selected market: resting count, remaining notional, notional-weighted
-passive offset from midpoint, and observed maker-fill events during this page
-session. Positive offset is away from midpoint; negative is beyond midpoint.
-Maker fills require `crossed=false`. Historical snapshots are excluded, duplicates
-are suppressed, and shared/tagged accounts count only fills matched to known
-client IDs. Reconnect gaps and unobserved IDs can undercount; this is not a fill
-rate, full trade history, P&L report, or quantum-performance measurement.
+For a local CPU experiment:
 
-The socket sends a heartbeat every 20 seconds and reconnects with exponential
-backoff capped at 30 seconds. Books with no fresh update for 15 seconds are
-marked stale. A REST-only book is labelled as a snapshot. Failed order refreshes
-or order snapshots older than 35 seconds are marked stale; cached orders are
-excluded from overlays and summary totals. Exported JSON includes freshness,
-timestamps, account attribution, quantities, and metric definitions.
+```sh
+cd qollab
+python3 -m venv .venv
+. .venv/bin/activate
+python3 -m pip install -r requirements.txt
+python3 local_demo.py --seed 731
+# One frozen run without retuning:
+python3 main.py --local
+```
 
-No API secret, wallet connection, transaction signing, or exchange write endpoint
-is used. Strategy execution remains external. Future measured comparisons need
-matched experiment windows, end-to-end decision timings (including quantum job
-overhead), reconciled fills, fees, inventory/risk constraints, and strategy-run IDs.
+Actual Qiskit 2.5.2 / Aer 0.17.2 / NumPy 2.5.4 runs were verified. The included sample output is from classical simulation, not hardware. Local retuning uses 48 exact state-vector evaluations and one final Aer job. Equal-budget random baselines can also find the exact optimum in this small grid.
 
-Run `npm test` for attribution, normalization, metric, stale-data, fill, and
-snapshot-race tests. Browser QA additionally exercised live streams for all four
-markets, responsive layouts, account overlays with mocked exchange data,
-cancellations, filtering, reconnects, exports, and accessibility.
+For your live beliefs, choose **Export my frozen Qollab snapshot** in Quantum lab and replace the teaching `snapshot.json`. New swipes never change an uploaded snapshot or launch remote jobs.
 
-Exchange documentation:
+## Preference-aware model
 
-- [WebSocket subscriptions](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions)
-- [Public info API](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint)
-- [Heartbeat and timeout behavior](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/timeouts-and-heartbeats)
+One joint allocation covers BTC, `xyz:SP500`, `xyz:BRENTOIL`, `xyz:GOLD` in that order. Each target is short 20%, flat, or long 20% of frozen equity: 81 valid portfolios and an 80% gross cap. These are USDC perpetual contracts, not shares or physical commodities.
 
-## Benchmark scope
+The supplied *Preference Aware Portfolio Cost and the Quantum Circuit* document defines the mathematics. Its teaching normalizations are implemented:
 
-The explorer uses illustrative mathematical models, not measured hardware
-results. Query-complexity improvement is distinct from wall-clock speedup.
-Both systems must meet the same success criterion. Modeled workload timings
-include disclosed fixed overhead and verification; they exclude readout, state
-preparation, networking, and other real hardware costs. Exports contain the model inputs
-and derived comparison; they are not evidence of empirical quantum advantage.
+- Preference mismatch: `A = mean((choice - conviction)^2)`.
+- Joint risk: `λR R = 0.15 × wᵀΣH w / 0.0004` (2% reference volatility squared).
+- Turnover: `λT T = 0.50 × Σ oneWayCost_i |w_i - currentWeight_i| / 0.001`.
+- Signed funding: `λF D = Σ horizonFunding_i w_i / 0.001`.
+- Invalid pair penalty: `0.5 × Σ longBit_i shortBit_i`.
 
-The benchmark explorer remains an illustrative model. Measured provider runs
-are separate from the explorer and available through the circuit runner below.
+Every term is dimensionless. Dollar estimates are reported separately. The reference weights are teaching defaults, not calibrated financial recommendations. Σ is the document’s explicitly synthetic daily covariance from volatilities `[4%, 1.2%, 2.5%, 1.5%]` and its listed correlations; it is PSD and not measured live correlations. Execution uses actual spreads plus modeled 5 bp fees and 1 bp slippage; funding uses current hourly estimates over 24 hours.
 
-Methodology references:
+Each asset uses `(long,short)` bits: `00` flat, `10` long, `01` short, `11` invalid. q0 is the leftmost displayed bit and the least significant integer bit. The QUBO exactly preserves economic costs even for 11; repairing 11 to 00 leaves economic costs unchanged and removes the 0.5 penalty. The Hamiltonian keeps the identity offset in reported costs and drops it only from phase evolution.
 
-- [IonQ application benchmarking](https://www.ionq.com/quantum-benchmarks)
-- [IBM Quantum: Grover's algorithm](https://quantum.cloud.ibm.com/learning/en/courses/fundamentals-of-quantum-algorithms/grover-algorithm/introduction)
+QAOA uses eight H gates, then two layers of `Rz(2γh)`, pair `Rzz(2γJ)` banks, and `Rx(2β)`. Pair gates decompose to CX → Rz → CX. Four shared angles retune within 48 evaluations. Training averages **all** 256 outcomes, including invalid encodings. A belief-only edit changes its two local fields and a constant; pair couplings stay fixed. The interactive circuit view distinguishes preparation, phase rotation, first-mixer ideal probabilities and actual final shot frequencies.
 
-Deploy to Vercel using the checked-in `vercel.json`. Static frontend assets and a protected Node execution function are deployed
-together. User-supplied font and logo assets are included for this
-project; no additional asset license is granted by this repository.
+Final selection rejects invalid/cap-infeasible outcomes and selects only the lowest-cost feasible portfolio **actually sampled** among 1,024 shots. It never substitutes the exact solver. Independent exhaustive enumeration provides the exact reference, additive gap, validity rate, cap-feasibility rate and optimal sampling frequency. Two reproducible random baselines use the same 1,024 draw budget: uniform raw 256 strings versus uniform valid 81 portfolios. These have different validity rates and are explicitly labelled.
 
+Continuous current marked holdings are an additional **Hold** outside the 81-point target grid. Turnover for Hold is zero. A proposed paper rebalance must improve the same frozen objective by at least **0.0001**; otherwise hold. Cost fit, search quality and future paper P&L are separate questions. No quantum speedup, profit forecast or global-optimum guarantee is claimed.
 
-## Live circuit execution
+## Cadence and paper execution
 
-Open `/quantum.html` to submit IonQ QIS circuits, follow job status, retrieve
-probability artifacts, and export the circuit, run ID, circuit hash, and timing.
-The Bell starter tests connectivity; it is not a trading strategy. Market context
-is metadata only and does not submit orders or change the live market feed.
+Every directional event updates bounded conviction and current cost fields immediately. Evidence has a 24-hour half-life, caps repeated influence at ±1 per asset/thesis, and uses tanh saturation with weight 0.5 and zero initial priors. The document’s weight-0.8 bullish worked example is reproduced separately in tests and the teaching snapshot.
 
-The path is browser → Vercel `/api/quantum` → IonQ v0.4 API. Qollab can remain
-where circuits are authored and reproduced. Its documented browser runtime is
-not an external job server; Qollab hackathon credits are not assumed to authorize
-this direct IonQ integration.
+**Ten** new directional views trigger a browser-local solve, preserving the user’s explicit cadence over the document’s three-view illustration. Skips do not count. Undo removes the original decaying event. **Optimize now** uses the same pipeline and starts a new batch. Previous angles warm-start the next fixed-budget retune. Each solve freezes beliefs, prices, covariance, positions, equity, funding, costs and constraints. New views, account changes or a snapshot older than five minutes make results historical and block applying them. Remote Qollab/IonQ runs remain manually frozen one-off evaluations.
 
-Set these values in Vercel's server environment settings and redeploy:
+Paper accounts start at 10,000 USDC. Review and confirmation are required for fills. Buys consume ask depth, sells consume bid depth; reversals charge full closing/opening turnover. Quantities round down to verified lot precision and fit 20% slots using post-cost equity, 80% gross and conservative 1× margin. Stale inputs, insufficient depth or a 50 bp distance-from-mid breach hold positions atomically. Confirmation expires after 60 seconds or a >50 bp quote-notional change. No-change results incur no fills, fees or revision. Funding is estimated in the objective but **not settled by the initial paper ledger**; displayed P&L excludes funding.
 
-- `IONQ_API_KEY`: your provider API credential, never entered in the browser.
-- `ALMOND_EXECUTION_TOKEN`: an independently generated random access code of at
-  least 32 characters. Enter this app code in the runner to submit or resume jobs.
-- `IONQ_BACKEND`: defaults to `simulator`. The ideal simulator returns
-  probabilities and ignores requested shots; this is not quantum hardware.
-- `ALMOND_ALLOW_QPU`: defaults to `false`. Hardware requires `true` and an
-  authorized `qpu.forte-1` or `qpu.forte-enterprise-1` backend.
+Private browser storage preserves paper positions and directional events. Legacy generic agreement reactions are not reinterpreted as market direction. Cross-tab changes block proposals until reload. Exports contain no provider credentials. Existing browser session keys and artifact schemas retain their `almond` prefix for compatibility.
 
-For local execution, put the same values in an ignored `.env.local` file using
-`.env.example` as a guide. Node 24 is used for local development. No credentials
-are included in this repository. Missing configuration leaves execution disabled.
+## Server connections
 
-This first integration supports 1–8 qubits, 1–256 gates and 1–4096 requested shots.
-Supported gates: `h`, `x`, `y`, `z`, `s`, `si`, `t`, `ti`, `rx`, `ry`, `rz`,
-`cnot`, and `swap`. Rotations use radians. Qiskit source is not executed on Vercel;
-provide a supported IonQ QIS JSON circuit. The server fixes the backend,
-validates all inputs, and protects job actions with the app code and origin checks.
+Set secrets only in Vercel’s server environment, then deploy:
 
-Accepted submissions return a signed receipt, valid for 24 hours, restricting
-status retrieval to that job. This tab saves the receipt and job in session
-storage; it does not save the access code. Exported JSON omits both. Keep the
-app code private: anyone with it can submit jobs within these limits. There is
-no automatic resubmission after an uncertain provider response. Check the IonQ
-dashboard first if submission could not be confirmed. Pausing browser updates
-does not cancel a provider job. Lost receipts and older jobs can be checked in
-IonQ directly.
+- `X_BEARER_TOKEN`: live X recent-search access. Optional `X_FEED_ACCESS_TOKEN` guards reads; optional `X_FEED_ACCOUNTS` restricts up to 20 source accounts.
+- `IONQ_API_KEY` and a ≥32-character `ALMOND_EXECUTION_TOKEN`: protected manual provider connector. `IONQ_BACKEND` defaults to simulator; `ALMOND_ALLOW_QPU=true` is an explicit hardware opt-in.
 
-Job status polls every four seconds with bounded retries. Completed jobs retrieve
-`ionq.result.probabilities.json.v2` artifacts from IonQ and preserve the raw
-returned JSON. Browser-observed elapsed time includes network, queueing, and
-polling. Provider execution duration is shown separately when returned. Neither
-establishes quantum speedup or the latency of an entire trading strategy.
+X queries are bounded to five market queries / 50 posts per batch, cached and coalesced for five minutes. This is periodic recent search, not a streaming firehose. Actual text, attribution, source links and available media remain visible; X likes stay separate from user convictions. Provider errors are sanitized. Do not place provider keys in client code or exported snapshots.
 
-Validation includes service tests for authentication, limits, signed receipts,
-provider requests/results, and sanitized errors. Browser tests exercise mocked
-job lifecycles separately from the live setup endpoint. No real provider job has
-been verified until account credentials are configured and a test run succeeds.
+## Validation
 
-Execution documentation:
+Automated tests cover the document’s worked costs and fields, all-256-state direct/QUBO/Ising equivalence, PSD validation, invalid repairs, continuous Hold, exact enumeration, normalized complex amplitudes, independently reconstructed circuits, seeded random benchmarks, budget limits, sampled-only selection, guarded atomic paper fills, feed normalization, auth and caching. Browser checks cover touch/mouse, vertical reading, tabs, ten-view cadence, historical results, manual confirmation, accessible stage controls, keyboard use and responsive layouts. Tests never submit exchange orders or provider hardware jobs.
 
-- [Qollab runtime environment](https://qollab.xyz/learn/docs/runtime-environment)
-- [IonQ v0.4 job submission](https://docs.ionq.com/api-reference/v0.4/jobs/create-job)
-- [IonQ job status](https://docs.ionq.com/api-reference/v0.4/jobs/get-job)
-- [IonQ result artifacts](https://docs.ionq.com/api-reference/v0.4/jobs/get-job-artifact)
-
-
-## Market Pulse: market-relevant X posts
-
-Open `/signals.html` for a card deck covering BTC, S&P 500, Brent oil and gold.
-Swipe right for a bullish 24-hour view, left for bearish; the buttons and arrow
-keys provide the same actions. Choose the affected asset explicitly for a
-multi-asset post and select a thesis group. Skip, undo, topic selection, batch ordering, review
-filters, JSON export and clear-history controls are included. These are personal
-directional preferences, not X likes, expected returns or measured market sentiment. No X write endpoint
-or exchange order endpoint is called.
-
-To enable real posts, set `X_BEARER_TOKEN` in Vercel's **Production** server
-environment and redeploy. The token must authorize X API v2 recent search, and
-the X account must have available API access/credits. Never paste this provider
-secret into the page, source code, or chat. Until connected, the deck shows an
-explicit setup state with no invented posts.
-
-Optional server settings:
-
-- `X_FEED_ACCESS_TOKEN`: an independent workspace code that guards feed reads.
-  Enter this code in the page's collapsed access section; it is kept only in
-  memory and cleared when leaving the page. Without a guard, cached posts are
-  public to anyone visiting the site.
-- `X_FEED_ACCOUNTS`: comma-separated X usernames, up to 20, to limit search to
-  trusted sources. The default searches the broader English-language topic
-  conversation.
-
-The server exposes GET `/api/x-feed?market=all` (or one exact API coin). It uses
-five fixed, bounded queries and retrieves at most 50 recent posts per batch.
-Search excludes reposts and replies; normalization also excludes sensitive,
-withheld, protected, and malformed results. Authors, timestamps, full text,
-entity links, available photos and source permalinks remain visible. Video links
-open on X. Author identity and topic matches do not prove factual reliability,
-market impact or a quantum/classical strategy result.
-
-Posts refresh at most every five minutes while the page is visible, with manual
-refresh available. Server instances cache/coalesce each market's reads for five
-minutes; public successful responses also use Vercel's CDN cache. This is periodic
-recent search, not a streaming firehose. Most-liked ordering sorts the returned
-batch, not all X posts. Deployment or distributed cold starts may perform extra
-reads; configure X account spending limits to bound overall API consumption.
-Provider errors are sanitized, cached briefly, and shown without stale cards.
-
-Directional views persist in local storage in this browser (up to 500 records).
-Legacy agreement/disagreement history is not reinterpreted as bullish/bearish views.
-Only post IDs, source links, handles, timestamps, topic labels and choices are
-saved; post content and API credentials are not persisted. Undo is available for
-this visit. Cross-tab changes block applying portfolio proposals until reload. JSON exports include the local
-scope and omit credentials. Clearing history affects only this browser.
-
-Validation covers query/auth limits, caching, normalization, provider failures,
-reaction persistence, filters and deliberate swipe thresholds. Browser QA uses
-labelled fixtures to exercise the live-card UI separately from the real setup
-endpoint; production posts require the configured server credential and valid provider access.
-
-X documentation:
-
-- [Recent search](https://docs.x.com/x-api/posts/search-recent-posts)
-- [Search query construction](https://docs.x.com/x-api/posts/search/integrate/build-a-query)
-- [API credits and spending limits](https://docs.x.com/x-api/getting-started/pricing)
-- [Post display requirements](https://docs.x.com/developer-terms/display-requirements)
-
-
-## One joint paper portfolio and local QAOA loop
-
-Market Pulse now proposes a single portfolio in fixed order: BTC, xyz:SP500,
-xyz:BRENTOIL, xyz:GOLD. Each choice is flat, long a 20% exposure slot, or short a
-20% slot; four assets give 81 valid portfolios. These are USDC perpetuals, not
-shares or physical commodities. Slots are bounded; swipes never increase them.
-
-Every directional view creates an event with asset, sign, thesis and time.
-Evidence has a 24-hour half-life, is capped to ±1 per asset/thesis group and maps
-to bounded conviction through tanh(0.5 × capped evidence). Undo removes the
-original decaying event. Skips create no event. After **10 new directional
-swipes**, the browser automatically freezes beliefs, marks, daily covariance
-prior, funding estimates, current quantities, equity and constraints. The
-**Optimize now** button runs the same pipeline and starts a new swipe batch.
-Stale books or unverified metadata pause optimization and paper fills; positions
-are held. New views during a run belong to the next batch and make that result
-historical. No proposal is automatically applied.
-
-The module worker simulates an eight-qubit, two-layer QAOA state vector locally.
-Each asset uses two bits: (long,short) = 00 flat, 10 long, 01 short; 11 is invalid.
-Displayed strings place q0 on the left. Previous four angles warm-start the next
-48-evaluation retune; training uses exact CPU expectation values. Then 1,024
-seeded pseudorandom shots sample the optimized distribution. The proposal is
-only the lowest-cost feasible portfolio that actually appeared in those shots.
-If none does, hold: the exact optimizer is never substituted. A separate
-exhaustive enumeration of 81 portfolios reports the true cost optimum, sampled
-gap, feasible frequency and optimal sampling frequency under the same snapshot.
-Eight qubits and CPU simulation establish no quantum speedup.
-
-The dimensionless objective combines mean squared belief mismatch, joint
-covariance risk (0.25 × wᵀΣw / 0.01), turnover friction (10 × changed exposure ×
-fee/half-spread/slippage), and signed 24-hour funding cost. Invalid encodings get
-a fixed uniform-bound penalty, unchanged by belief-only edits. Such edits only
-change the affected asset’s individual Ising Z fields/RZ gates; pairwise risk
-couplings remain unchanged. The page immediately shows changed coefficients and
-cost terms with other frozen inputs held fixed. Results show updated angles,
-actual sampled combinations, resources and separate CPU timings. Comparisons of
-old and new proposals use the same updated objective.
-
-Σ is an explicit modeled daily prior B Bᵀ + diagonal idiosyncratic variance,
-displayed in the page and exported. It is not an estimate of observed market
-correlations. The default model fee is 5 bp; live bid/ask spread and a 1 bp
-slippage estimate inform optimization. This is a research template, not a
-backtested strategy or realized quantum-advantage result.
-
-Paper accounts start at 10,000 USDC and separate collateral balance, quantities,
-entries, realized/unrealized P&L and cumulative fees. Reviewing either the sampled
-QAOA candidate or the explicitly labelled exact classical reference opens a
-confirmation panel. Confirmation rechecks fresh books and consumes ask depth for
-buys or bid depth for sells, charging modeled fees on full turnover. Quantities
-round down to verified lot precision and fit 20% slots using post-cost equity,
-80% gross and conservative 1× initial margin. Full joint fills are atomic; stale
-inputs, insufficient visible liquidity, or a 50 bp distance-from-mid execution
-breach hold positions. A quote older than 60 seconds or a 50 bp notional change
-requires review again. Zero fills are a valid no-change outcome with no fees or
-ledger revision. Funding is estimated in the objective; this initial paper
-ledger **does not settle funding**, so displayed P&L excludes funding.
-
-Frozen exports include inputs, sampled results, independently checked objective,
-and a QIS circuit. Upload `snapshot.json` and `qollab/main.py` into the same
-**Python / Qiskit** Qollab project. Qollab supplies `backend`; the script validates
-the artifact, calls `backend.run` exactly once, measures the circuit and reports
-the best feasible actually returned portfolio against the classical reference.
-The repeated optimizer stays in the local browser simulator. A Qollab/IonQ
-backend evaluation is a separately frozen one-off; it never follows new swipes
-or trains through repeated hardware jobs. No live Qollab/IonQ evaluation has
-been verified without a configured project/backend. See `qollab/README.txt`.
-
-Tests verify convex risk input validation, QUBO/finance equivalence for all 81
-choices, fixed invalid penalties and belief-only coupling invariance, normalized
-complex QAOA amplitudes, independent circuit equivalence, warm-start budgets,
-shot-only selection, reversals/fees/lot precision and atomic guarded paper fills.
-Browser QA verifies ten-swipe cadence, skip/undo, multi-asset selection, frozen
-results, manual confirmation, historical blocking, persistence, accessibility
-and mobile layouts. No tests submit hardware jobs or exchange orders.
+Primary references: [QAOA paper](https://arxiv.org/abs/1411.4028), [IBM RZZ](https://quantum.cloud.ibm.com/docs/en/api/qiskit/qiskit.circuit.library.RZZGate), [Hyperliquid API](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api), [X recent search](https://docs.x.com/x-api/posts/search-recent-posts).

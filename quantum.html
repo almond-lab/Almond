@@ -4,15 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0a0a0c">
-  <meta name="description" content="Almond's protected circuit runner connects quantum circuit experiments to an IonQ execution provider, with transparent job states and downloadable results.">
-  <title>Circuit Runner — Almond</title>
-  <link rel="icon" href="assets/almond-logo.png">
+  <meta name="description" content="QSwipe's protected circuit runner connects quantum circuit experiments to an IonQ execution provider, with transparent job states and downloadable results.">
+  <title>Circuit Runner — QSwipe</title>
+  <link rel="stylesheet" href="brand.css">
+  <link rel="icon" href="assets/qswipe-mark.svg">
   <link rel="stylesheet" href="quantum.css">
   <script src="quantum.js" type="module"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to the circuit runner</a>
-  <header class="site-header shell"><a class="brand" href="/" aria-label="Almond home"><img src="assets/almond-logo.png" alt="Almond" width="158" height="35"></a><nav aria-label="Main navigation"><a href="/#benchmark">Benchmark explorer</a><a href="/markets.html">Live trading lab</a><a href="/quantum.html" aria-current="page">Circuit runner</a><a href="/signals.html">Market Pulse</a></nav><span class="header-tag">PROTECTED EXECUTION</span></header>
+  <header class="site-header shell"><a class="brand qswipe-legacy-brand" href="/" aria-label="QSwipe home"><img src="assets/qswipe-mark.svg" alt="" width="32" height="32"><span>QSwipe<span class="qswipe-dot">.</span></span></a><nav aria-label="Main navigation"><a href="/">QSwipe</a><a href="/markets.html">Live trading lab</a><a href="/quantum.html" aria-current="page">Circuit runner</a><a href="/signals.html">Swipe workspace</a></nav><span class="header-tag">PROTECTED EXECUTION</span></header>
   <main id="main">
     <section class="runner-hero shell" aria-labelledby="runner-title"><div><p class="eyebrow">ALMOND / QUANTUM WORKSPACE</p><h1 id="runner-title">From a circuit<br>to an observable result.</h1></div><div class="hero-context"><p>Submit a circuit. Follow the job. Inspect the returned evidence.</p><span>Qollab for authoring and reproducibility.<br>IonQ through a protected execution connector.</span></div></section>
     <div class="runner-shell shell">
@@ -20,7 +21,7 @@
       <div class="workspace-grid">
         <section class="circuit-panel panel" aria-labelledby="circuit-title"><div class="panel-heading"><div><p class="eyebrow">01 / DEFINE THE EXPERIMENT</p><h2 id="circuit-title">Your circuit.</h2></div><button id="load-bell" class="secondary-button" type="button">Load Bell starter</button></div>
           <form id="circuit-form"><div class="form-intro"><span class="circuit-symbol" aria-hidden="true">|ψ⟩</span><p>The Bell starter is a two-qubit connectivity test. It checks the execution path; it is not a trading strategy or a speedup benchmark.</p></div>
-            <label for="execution-access">Execution access code</label><input id="execution-access" name="execution-access" type="password" autocomplete="off" aria-describedby="access-help" placeholder="Your application access code"><p id="access-help" class="field-help">The access code for this Almond app. This is not your IonQ API key; provider credentials stay on the server.</p>
+            <label for="execution-access">Execution access code</label><input id="execution-access" name="execution-access" type="password" autocomplete="off" aria-describedby="access-help" placeholder="Your application access code"><p id="access-help" class="field-help">The access code for this QSwipe app. This is not your IonQ API key; provider credentials stay on the server.</p>
             <label for="circuit-name">Experiment name</label><input id="circuit-name" name="circuit-name" type="text" maxlength="80" value="Bell connection test" autocomplete="off">
             <div class="editor-label"><label for="circuit-json">Circuit definition</label><span>IONQ QIS · JSON</span></div><textarea id="circuit-json" name="circuit-json" rows="12" spellcheck="false" wrap="off" aria-describedby="circuit-help">{
   "qubits": 2,
@@ -44,6 +45,6 @@
       <section class="operator-setup" aria-labelledby="setup-title"><details><summary><span><span class="eyebrow">FOR THE WORKSPACE OPERATOR</span><strong id="setup-title">Configure the execution connector</strong></span><span class="details-plus" aria-hidden="true">+</span></summary><div class="setup-content"><div><h3>Set two server-side values.</h3><p>In Vercel environment settings, configure <code>IONQ_API_KEY</code> for the provider and <code>ALMOND_EXECUTION_TOKEN</code> for this app's access code (at least 32 characters). Redeploy, then check the connection above.</p></div><div><h3>Choose the execution target.</h3><p>The server defaults to a simulator. A QPU target requires <code>IONQ_BACKEND</code> and <code>ALMOND_ALLOW_QPU=true</code>; the browser cannot switch to hardware. Actual provider results determine what appears in the result panel.</p></div></div></details><div class="reference-links"><a href="https://qollab.xyz/programs/hackathon" target="_blank" rel="noopener noreferrer">Qollab hackathon ↗</a><a href="https://docs.ionq.com/api-reference/v0.4/jobs/create-job" target="_blank" rel="noopener noreferrer">IonQ circuit API ↗</a><a href="/markets.html">Return to the read-only trading lab ↗</a></div></section>
     </div>
   </main>
-  <footer class="site-footer shell"><a class="brand" href="/" aria-label="Almond home"><img src="assets/almond-logo.png" alt="Almond" width="125" height="28" loading="lazy"></a><p>Independent research workspace · Observable execution</p><a href="https://github.com/almond-lab/Almond" target="_blank" rel="noopener noreferrer">Open source ↗</a></footer>
+  <footer class="site-footer shell"><a class="brand qswipe-legacy-brand" href="/" aria-label="QSwipe home"><img src="assets/qswipe-mark.svg" alt="" width="32" height="32"><span>QSwipe<span class="qswipe-dot">.</span></span></a><p>Independent research workspace · Observable execution</p><a href="https://github.com/almond-lab/QSwipe" target="_blank" rel="noopener noreferrer">Open source ↗</a></footer>
 </body>
 </html>

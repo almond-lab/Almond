@@ -1,4 +1,4 @@
-"""Frozen, one-off Qollab evaluation of Almond's joint portfolio circuit.
+"""Frozen, one-off Qollab evaluation of QSwipe's joint portfolio circuit.
 
 Qollab supplies a pre-created Qiskit-compatible ``backend``. Upload the
 exported snapshot.json beside this file and press Run once. This file has
@@ -9,6 +9,8 @@ import itertools
 import json
 import math
 import time
+import sys
+import random
 from pathlib import Path
 
 from qiskit import QuantumCircuit, transpile
@@ -67,8 +69,8 @@ def finance(snapshot, choices):
         for choice, conviction in zip(choices, snapshot["convictions"])
     ) / 4
     risk = settings["riskWeight"] * variance / settings["riskNormalization"]
-    turnover = settings["turnoverWeight"] * turnover_fraction
-    funding = settings["fundingWeight"] * funding_fraction
+    turnover = settings["turnoverWeight"] * turnover_fraction / settings["moneyNormalization"]
+    funding = settings["fundingWeight"] * funding_fraction / settings["moneyNormalization"]
     return {
         "beliefMismatch": belief, "jointRisk": risk, "turnoverCost": turnover,
         "funding": funding, "invalidEncoding": 0, "total": belief + risk + turnover + funding,
@@ -93,6 +95,8 @@ def validate_artifact(artifact):
         raise ValueError(f"Expected the exported {SCHEMA} schema")
     snapshot, objective = artifact["snapshot"], artifact["objective"]
     settings = snapshot["settings"]
+    if "moneyNormalization" not in settings or "minimumImprovement" not in settings:
+        raise ValueError("This export uses older normalization. Export a fresh QSwipe snapshot or use the included teaching snapshot.")
     for key in ("prices", "holdings", "convictions", "fundingRates"):
         if len(snapshot[key]) != 4:
             raise ValueError(f"{key} requires four entries in COINS order")
@@ -103,12 +107,14 @@ def validate_artifact(artifact):
     if any(abs(score) > 1 for score in snapshot["convictions"]):
         raise ValueError("Convictions must be bounded in [-1,1]")
     for key in ("slot", "grossLimit", "horizonHours", "beliefWeight", "riskWeight",
-                "turnoverWeight", "fundingWeight", "riskNormalization"):
+                "turnoverWeight", "fundingWeight", "riskNormalization", "moneyNormalization", "minimumImprovement"):
         settings[key] = finite(settings[key], key)
     if not 0 < settings["slot"] <= .2 or not 0 < settings["grossLimit"] <= .8:
         raise ValueError("Slot / gross limit must remain within the 20% / 80% model limits")
-    if settings["horizonHours"] <= 0 or settings["riskNormalization"] <= 0:
-        raise ValueError("Horizon and risk normalization must be positive")
+    if settings["horizonHours"] <= 0 or settings["riskNormalization"] <= 0 or settings["moneyNormalization"] <= 0:
+        raise ValueError("Horizon and normalization scales must be positive")
+    if settings["minimumImprovement"] < 0:
+        raise ValueError("Minimum improvement cannot be negative")
     if any(settings[key] < 0 for key in ("beliefWeight", "riskWeight", "turnoverWeight", "fundingWeight")):
         raise ValueError("Objective weights cannot be negative")
     if len(snapshot["executionRates"]) != 4:
@@ -152,7 +158,8 @@ def validate_artifact(artifact):
         pair["coefficient"] = finite(pair["coefficient"], "pair coefficient")
     # Validate the exported QUBO against an independent finance implementation
     # for all 256 states, including the explicit invalid-11 penalty.
-    feasible_costs, invalid_costs = [], []
+    if not math.isclose(objective["invalidPenalty"], settings.get("invalidPenalty", .5), rel_tol=0, abs_tol=1e-12) or objective["invalidPenalty"] <= 0:
+        raise ValueError("Fixed positive invalid penalty must match the frozen settings")
     for state in range(256):
         raw_choices = [((state >> (2 * i)) & 1) - ((state >> (2 * i + 1)) & 1)
                        for i in range(4)]
@@ -162,9 +169,13 @@ def validate_artifact(artifact):
         actual = qubo_cost(objective, state)
         if not math.isfinite(actual) or not math.isclose(expected, actual, rel_tol=1e-10, abs_tol=1e-9):
             raise ValueError(f"Exported QUBO disagrees with the frozen financial objective at state {state}")
-        (invalid_costs if invalid_count else feasible_costs).append(actual)
-    if min(invalid_costs) <= max(feasible_costs):
-        raise ValueError("Invalid encoding penalty must dominate every valid objective cost")
+        if invalid_count:
+            repaired = state
+            for asset in range(4):
+                if ((state >> (2 * asset)) & 3) == 3:
+                    repaired &= ~(3 << (2 * asset))
+            if not math.isclose(actual - qubo_cost(objective, repaired), invalid_count * objective["invalidPenalty"], rel_tol=1e-10, abs_tol=1e-9):
+                raise ValueError("Repairing 11 to 00 must preserve finances and remove the fixed penalty")
     shots = settings.get("localShots", 1024)
     if not isinstance(shots, int) or isinstance(shots, bool) or not 1 <= shots <= 4096:
         raise ValueError("Requested shots must be an integer from 1 to 4096")
@@ -213,7 +224,7 @@ def construct_circuit(artifact):
                 raise ValueError("Exported circuit does not match the frozen QUBO and angles")
         if set(supplied) != set(required):
             raise ValueError("Unsupported extra fields in the exported gate")
-    circuit = QuantumCircuit(8, 8, name="Almond frozen joint portfolio")
+    circuit = QuantumCircuit(8, 8, name="QSwipe frozen joint portfolio")
     for gate in gates:
         if gate["gate"] == "h":
             circuit.h(gate["target"])
@@ -259,7 +270,7 @@ def normalized_counts(counts):
 
 def evaluate_counts(snapshot, objective, counts, exact):
     shots = sum(counts.values())
-    selected, feasible_samples, optimal_samples, distribution = None, 0, 0, []
+    selected, valid_samples, feasible_samples, optimal_samples, distribution = None, 0, 0, 0, []
     for state in sorted(counts):
         count = counts[state]
         if count == 0:
@@ -271,6 +282,8 @@ def evaluate_counts(snapshot, objective, counts, exact):
         distribution.append({"state": state, "bitstringQ0First": displayed_bits(state), "choices": choices,
                              "count": count, "frequency": count / shots if shots else 0,
                              "cost": cost, "feasible": feasible})
+        if choices is not None:
+            valid_samples += count
         if not feasible:
             continue
         feasible_samples += count
@@ -282,20 +295,44 @@ def evaluate_counts(snapshot, objective, counts, exact):
                         "cost": cost, "count": count, "breakdown": breakdown}
     return {"selected": selected, "exact": exact, "distribution": distribution,
             "gap": max(0, selected["cost"] - exact["cost"]) if selected else None,
-            "metrics": {"returnedShots": shots, "feasibleSamples": feasible_samples,
+            "metrics": {"returnedShots": shots, "validSamples": valid_samples,
+                        "validityRate": valid_samples / shots if shots else 0, "feasibleSamples": feasible_samples,
                         "feasibleRate": feasible_samples / shots if shots else 0,
                         "optimalFrequency": optimal_samples / shots if shots else 0},
             "holdReason": None if selected else "No feasible returned candidate. Hold current quantities; no exact fallback."}
 
 
-def main(provided_backend):
+def evaluate_held(snapshot):
+    weights = [q * price / snapshot["equity"] for q, price in zip(snapshot["holdings"], snapshot["prices"])]
+    normalized = [weight / snapshot["settings"]["slot"] for weight in weights]
+    breakdown = finance(snapshot, normalized)
+    return {"cost": breakdown["total"], "breakdown": breakdown, "weights": weights,
+            "offGrid": any(min(abs(value-grid) for grid in (-1, 0, 1)) > EPS for value in normalized)}
+
+
+def random_baselines(snapshot, objective, exact, shots, seed=731):
+    valid = [state for state in range(256) if choices_for(state) is not None]
+    outcomes = {}
+    for name, pool in (("rawBits", list(range(256))), ("validPortfolios", valid)):
+        rng, counts = random.Random(f"{seed}:{name}"), {}
+        for _ in range(shots):
+            state = rng.choice(pool)
+            counts[state] = counts.get(state, 0) + 1
+        outcomes[name] = {"name": "Uniform raw 256 bitstrings" if name == "rawBits" else "Uniform valid 81 portfolios",
+                          "expectedValidityRate": 81/256 if name == "rawBits" else 1,
+                          **evaluate_counts(snapshot, objective, counts, exact)}
+    return outcomes
+
+
+def main(provided_backend, artifact=None, output_name="qollab_result.json", execution_mode="qollab-provided-backend"):
     if provided_backend is None:
         raise RuntimeError("Qollab must supply the pre-created Qiskit backend named 'backend'; this file does not create or authenticate one")
     folder = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
     path = folder / "snapshot.json"
-    if not path.is_file():
-        raise FileNotFoundError("Upload the frozen Almond export as snapshot.json beside main.py before pressing Run")
-    artifact = json.loads(path.read_text(encoding="utf-8"))
+    if artifact is None:
+        if not path.is_file():
+            raise FileNotFoundError("Upload the frozen QSwipe export as snapshot.json beside main.py before pressing Run")
+        artifact = json.loads(path.read_text(encoding="utf-8"))
     snapshot, objective, shots = validate_artifact(artifact)
     circuit = construct_circuit(artifact)
     classical_started = time.perf_counter()
@@ -311,20 +348,29 @@ def main(provided_backend):
     observed_seconds = time.perf_counter() - observed_started
     counts = normalized_counts(result.get_counts(0))
     outcome = evaluate_counts(snapshot, objective, counts, exact)
+    held = evaluate_held(snapshot)
+    improvement = held["cost"]-outcome["selected"]["cost"] if outcome["selected"] else None
+    minimum = snapshot["settings"]["minimumImprovement"]
+    hold_comparison = {"heldCost": held["cost"], "candidateCost": outcome["selected"]["cost"] if outcome["selected"] else None,
+                       "improvement": improvement, "minimumImprovement": minimum,
+                       "eligible": improvement is not None and improvement >= minimum, "held": held}
+    baselines = random_baselines(snapshot, objective, exact, outcome["metrics"]["returnedShots"])
     report = {"schema": "almond.joint-portfolio.qollab-result.v1", "snapshotId": snapshot["id"],
-              "snapshotVersion": snapshot["version"], "historicalAtExport": artifact.get("historical", False),
+              "snapshotVersion": snapshot["version"], "executionMode": execution_mode,
+              "syntheticInputs": bool(snapshot.get("synthetic", False)), "historicalAtExport": artifact.get("historical", False),
               "coins": list(COINS), "bitOrder": "q0 leftmost; each pair long,short; 11 invalid",
               "requestedShots": shots, "timing": {"compilationSeconds": compile_seconds,
                     "observedSubmissionAndResultSeconds": observed_seconds,
                     "classicalReferenceSeconds": reference_seconds},
               "resources": {"qubits": 8, "submittedGateCountExcludingMeasurement": len(artifact["circuit"]["circuit"]),
                             "compiledDepth": compiled.depth(), "backendSubmissions": 1},
-              **outcome,
+              **outcome, "holdComparison": hold_comparison, "randomBaselines": baselines,
               "methodology": "Frozen modeled objective; backend-produced samples. Backend may be a simulator or hardware. No quantum speedup or trading-performance claim."}
-    print(f"ALMOND / FROZEN QOLLAB RUN · snapshot {snapshot['id']} · v{snapshot['version']}")
+    print(f"QSWIPE / FROZEN QOLLAB RUN · snapshot {snapshot['id']} · v{snapshot['version']}")
     print("Exactly one backend submission. No local retuning or automatic trading.")
     print("Bit display: q0 first, (long, short) pairs in BTC / S&P 500 / Brent / Gold order; 11 invalid.")
     print(f"Returned / requested shots: {outcome['metrics']['returnedShots']} / {shots}")
+    print(f"Valid encoding rate: {outcome['metrics']['validityRate']:.4%}")
     print(f"Feasible sample rate: {outcome['metrics']['feasibleRate']:.4%}")
     print(f"Exact-optimal returned frequency: {outcome['metrics']['optimalFrequency']:.4%}")
     if outcome["selected"]:
@@ -336,13 +382,22 @@ def main(provided_backend):
     else:
         print(outcome["holdReason"])
         print(f"Classical reference remains separate: {exact['cost']:.10f}")
+    print(f"Current marked Hold objective: {held['cost']:.10f}; minimum improvement: {minimum:.6f}")
+    print(f"Eligible versus Hold: {hold_comparison['eligible']} (no automatic trade is applied)")
+    for name, baseline in baselines.items():
+        print(f"Random baseline {name}: {baseline['metrics']['returnedShots']} draws; validity {baseline['metrics']['validityRate']:.4%}; feasibility {baseline['metrics']['feasibleRate']:.4%}; gap {baseline['gap']}")
     print(f"Compilation: {compile_seconds:.4f}s; observed submission/result: {observed_seconds:.4f}s; classical reference: {reference_seconds:.6f}s")
     print("Covariance, friction and funding are frozen estimates. Observed elapsed includes the backend job lifecycle; backend type is determined by Qollab.")
-    output = folder / "qollab_result.json"
+    output = folder / output_name
     output.write_text(json.dumps(report, indent=2, allow_nan=False), encoding="utf-8")
     print(f"Experiment record written to {output.name}")
     return report
 
 
 if __name__ == "__main__":
-    main(globals().get("backend"))
+    provided = globals().get("backend")
+    if "--local" in sys.argv and provided is None:
+        from qiskit_aer import AerSimulator
+        provided = AerSimulator(seed_simulator=731)
+        print("LOCAL AER SIMULATOR · not a QPU or remote provider job")
+    main(provided, execution_mode="local-aer-simulator" if "--local" in sys.argv else "qollab-provided-backend")

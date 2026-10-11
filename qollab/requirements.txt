@@ -1,0 +1,4 @@
+# Local simulator only. Qollab supplies its own backend when main.py is run there.
+numpy>=1.26,<3.0
+qiskit>=2.0,<3.0
+qiskit-aer>=0.17,<1.0

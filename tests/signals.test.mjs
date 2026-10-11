@@ -111,3 +111,13 @@ test('swipes require deliberate horizontal travel and tolerate vertical scrollin
   assert.equal(swipeDecision(15, 5, 350), null); assert.equal(swipeDecision(100, 180, 350), null);
   assert.equal(swipeDecision(150, 140, 350), null);
 });
+
+test('a deliberate fast flick can commit while jitter, reversed release and vertical reading cannot',()=>{
+  assert.equal(swipeDecision(48,4,500,.8),'agree');
+  assert.equal(swipeDecision(-48,4,500,-.8),'disagree');
+  assert.equal(swipeDecision(20,1,500,3),null);
+  assert.equal(swipeDecision(48,2,500,-.8),null);
+  assert.equal(swipeDecision(48,70,500,.8),null);
+  assert.equal(swipeDecision(NaN,0,500,1),null);
+  assert.equal(swipeDecision(100,0,0,1),null);
+});
