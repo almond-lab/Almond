@@ -168,10 +168,11 @@ Execution documentation:
 ## Market Pulse: market-relevant X posts
 
 Open `/signals.html` for a card deck covering BTC, S&P 500, Brent oil and gold.
-Swipe right to like/agree, left to dislike/disagree; the buttons and arrow keys
-provide the same actions. Skip, undo, topic selection, batch ordering, review
+Swipe right for a bullish 24-hour view, left for bearish; the buttons and arrow
+keys provide the same actions. Choose the affected asset explicitly for a
+multi-asset post and select a thesis group. Skip, undo, topic selection, batch ordering, review
 filters, JSON export and clear-history controls are included. These are personal
-Almond opinions, not X likes or measured market sentiment. No X write endpoint
+directional preferences, not X likes, expected returns or measured market sentiment. No X write endpoint
 or exchange order endpoint is called.
 
 To enable real posts, set `X_BEARER_TOKEN` in Vercel's **Production** server
@@ -206,16 +207,17 @@ batch, not all X posts. Deployment or distributed cold starts may perform extra
 reads; configure X account spending limits to bound overall API consumption.
 Provider errors are sanitized, cached briefly, and shown without stale cards.
 
-Personal reactions persist in local storage in this browser (up to 500 records).
+Directional views persist in local storage in this browser (up to 500 records).
+Legacy agreement/disagreement history is not reinterpreted as bullish/bearish views.
 Only post IDs, source links, handles, timestamps, topic labels and choices are
 saved; post content and API credentials are not persisted. Undo is available for
-this visit. Cross-tab changes are reconciled. JSON exports include the local
+this visit. Cross-tab changes block applying portfolio proposals until reload. JSON exports include the local
 scope and omit credentials. Clearing history affects only this browser.
 
 Validation covers query/auth limits, caching, normalization, provider failures,
 reaction persistence, filters and deliberate swipe thresholds. Browser QA uses
 labelled fixtures to exercise the live-card UI separately from the real setup
-endpoint; production posts remain unavailable until provider access is supplied.
+endpoint; production posts require the configured server credential and valid provider access.
 
 X documentation:
 
@@ -223,3 +225,80 @@ X documentation:
 - [Search query construction](https://docs.x.com/x-api/posts/search/integrate/build-a-query)
 - [API credits and spending limits](https://docs.x.com/x-api/getting-started/pricing)
 - [Post display requirements](https://docs.x.com/developer-terms/display-requirements)
+
+
+## One joint paper portfolio and local QAOA loop
+
+Market Pulse now proposes a single portfolio in fixed order: BTC, xyz:SP500,
+xyz:BRENTOIL, xyz:GOLD. Each choice is flat, long a 20% exposure slot, or short a
+20% slot; four assets give 81 valid portfolios. These are USDC perpetuals, not
+shares or physical commodities. Slots are bounded; swipes never increase them.
+
+Every directional view creates an event with asset, sign, thesis and time.
+Evidence has a 24-hour half-life, is capped to ±1 per asset/thesis group and maps
+to bounded conviction through tanh(0.5 × capped evidence). Undo removes the
+original decaying event. Skips create no event. After **10 new directional
+swipes**, the browser automatically freezes beliefs, marks, daily covariance
+prior, funding estimates, current quantities, equity and constraints. The
+**Optimize now** button runs the same pipeline and starts a new swipe batch.
+Stale books or unverified metadata pause optimization and paper fills; positions
+are held. New views during a run belong to the next batch and make that result
+historical. No proposal is automatically applied.
+
+The module worker simulates an eight-qubit, two-layer QAOA state vector locally.
+Each asset uses two bits: (long,short) = 00 flat, 10 long, 01 short; 11 is invalid.
+Displayed strings place q0 on the left. Previous four angles warm-start the next
+48-evaluation retune; training uses exact CPU expectation values. Then 1,024
+seeded pseudorandom shots sample the optimized distribution. The proposal is
+only the lowest-cost feasible portfolio that actually appeared in those shots.
+If none does, hold: the exact optimizer is never substituted. A separate
+exhaustive enumeration of 81 portfolios reports the true cost optimum, sampled
+gap, feasible frequency and optimal sampling frequency under the same snapshot.
+Eight qubits and CPU simulation establish no quantum speedup.
+
+The dimensionless objective combines mean squared belief mismatch, joint
+covariance risk (0.25 × wᵀΣw / 0.01), turnover friction (10 × changed exposure ×
+fee/half-spread/slippage), and signed 24-hour funding cost. Invalid encodings get
+a fixed uniform-bound penalty, unchanged by belief-only edits. Such edits only
+change the affected asset’s individual Ising Z fields/RZ gates; pairwise risk
+couplings remain unchanged. The page immediately shows changed coefficients and
+cost terms with other frozen inputs held fixed. Results show updated angles,
+actual sampled combinations, resources and separate CPU timings. Comparisons of
+old and new proposals use the same updated objective.
+
+Σ is an explicit modeled daily prior B Bᵀ + diagonal idiosyncratic variance,
+displayed in the page and exported. It is not an estimate of observed market
+correlations. The default model fee is 5 bp; live bid/ask spread and a 1 bp
+slippage estimate inform optimization. This is a research template, not a
+backtested strategy or realized quantum-advantage result.
+
+Paper accounts start at 10,000 USDC and separate collateral balance, quantities,
+entries, realized/unrealized P&L and cumulative fees. Reviewing either the sampled
+QAOA candidate or the explicitly labelled exact classical reference opens a
+confirmation panel. Confirmation rechecks fresh books and consumes ask depth for
+buys or bid depth for sells, charging modeled fees on full turnover. Quantities
+round down to verified lot precision and fit 20% slots using post-cost equity,
+80% gross and conservative 1× initial margin. Full joint fills are atomic; stale
+inputs, insufficient visible liquidity, or a 50 bp distance-from-mid execution
+breach hold positions. A quote older than 60 seconds or a 50 bp notional change
+requires review again. Zero fills are a valid no-change outcome with no fees or
+ledger revision. Funding is estimated in the objective; this initial paper
+ledger **does not settle funding**, so displayed P&L excludes funding.
+
+Frozen exports include inputs, sampled results, independently checked objective,
+and a QIS circuit. Upload `snapshot.json` and `qollab/main.py` into the same
+**Python / Qiskit** Qollab project. Qollab supplies `backend`; the script validates
+the artifact, calls `backend.run` exactly once, measures the circuit and reports
+the best feasible actually returned portfolio against the classical reference.
+The repeated optimizer stays in the local browser simulator. A Qollab/IonQ
+backend evaluation is a separately frozen one-off; it never follows new swipes
+or trains through repeated hardware jobs. No live Qollab/IonQ evaluation has
+been verified without a configured project/backend. See `qollab/README.txt`.
+
+Tests verify convex risk input validation, QUBO/finance equivalence for all 81
+choices, fixed invalid penalties and belief-only coupling invariance, normalized
+complex QAOA amplitudes, independent circuit equivalence, warm-start budgets,
+shot-only selection, reversals/fees/lot precision and atomic guarded paper fills.
+Browser QA verifies ten-swipe cadence, skip/undo, multi-asset selection, frozen
+results, manual confirmation, historical blocking, persistence, accessibility
+and mobile layouts. No tests submit hardware jobs or exchange orders.

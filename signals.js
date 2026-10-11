@@ -1,4 +1,9 @@
-import { SIGNAL_MARKETS, REACTION_KEY, readReactions, recordReaction, selectPosts, reactionCounts, swipeDecision } from './signal-model.mjs';
+import { SIGNAL_MARKETS, readReactions, recordReaction, selectPosts, reactionCounts, swipeDecision } from './signal-model.mjs';
+import { PortfolioController } from './portfolio-controller.mjs';
+
+// Older agreement reactions are not reinterpreted as directional price views.
+const REACTION_KEY = 'almond.pulse.directional-reactions.v2';
+const portfolio = new PortfolioController();
 
 const $ = id => document.getElementById(id);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -33,7 +38,7 @@ function appendPostText(node, post) {
 function card(post) {
   const article = el('article', 'pulse-card');
   article.tabIndex = 0;
-  article.setAttribute('aria-label', `X post by ${post.author.name}. Use right arrow to agree or left arrow to disagree.`);
+  article.setAttribute('aria-label', `X post by ${post.author.name}. Use right arrow for a bullish 24-hour view or left arrow for a bearish view.`);
   article.setAttribute('aria-describedby', 'keyboard-hint');
   const kicker = el('div', 'card-kicker');
   kicker.append(el('span', '', `MARKET CONVERSATION / ${post.markets.map(marketName).join(' · ')}`));
@@ -71,10 +76,10 @@ function card(post) {
   article.append(metrics);
   const tags = el('div', 'card-tags');
   for (const coin of post.markets) tags.append(el('span', '', SIGNAL_MARKETS.find(m => m.coin === coin)?.label));
-  if (reactions[post.id]) tags.append(el('span', 'your-reaction', `Your takeaway: ${reactions[post.id].decision === 'agree' ? 'Agree' : 'Disagree'}`));
+  if (reactions[post.id]) tags.append(el('span', 'your-reaction', `Your takeaway: ${reactions[post.id].decision === 'agree' ? 'Bullish' : 'Bearish'}`));
   article.append(tags);
   // Swipe affordances are separate Almond feedback; they do not invoke X actions.
-  article.append(el('span', 'swipe-stamp agree-stamp', 'AGREE'), el('span', 'swipe-stamp disagree-stamp', 'DISAGREE'));
+  article.append(el('span', 'swipe-stamp agree-stamp', 'BULLISH'), el('span', 'swipe-stamp disagree-stamp', 'BEARISH'));
   article.addEventListener('pointerdown', beginDrag);
   article.addEventListener('pointermove', moveDrag);
   article.addEventListener('pointerup', endDrag);
@@ -109,7 +114,7 @@ function renderJournal() {
     const row = el('div', `saved-item ${r.decision}`);
     const detail = el('div', 'saved-detail');
     detail.append(link(r.username ? `@${r.username}` : `Post ${id}`, r.url), el('small', '', `${r.markets.map(marketName).join(' · ')} / ${dateText(r.at)}`));
-    row.append(el('span', 'saved-direction', r.decision === 'agree' ? '↗' : '↙'), detail, el('span', 'saved-decision', r.decision === 'agree' ? 'Agree' : 'Disagree'));
+    row.append(el('span', 'saved-direction', r.decision === 'agree' ? '↗' : '↙'), detail, el('span', 'saved-decision', r.decision === 'agree' ? 'Bullish' : 'Bearish'));
     list.append(row);
   }
 }
@@ -121,6 +126,7 @@ function renderDeck(preferredId) {
   const focused = document.activeElement?.classList.contains('pulse-card');
   const candidates = selectPosts(posts, { market, filter: $('review-filter').value, sort: $('feed-sort').value, reactions, skipped });
   current = candidates.find(p => p.id === preferredId) || candidates.find(p => !seen.has(p.id)) || null;
+  portfolio.setPost(current);
   const deck = $('deck'); deck.replaceChildren();
   $('market-label').textContent = marketName(market);
   if ($('filter-label')) $('filter-label').textContent = `${candidates.filter(p => !seen.has(p.id)).length} posts in this view`;
@@ -147,6 +153,8 @@ function save() {
 
 async function react(decision) {
   if (!current || busy || isStale()) return;
+  const coin = portfolio.chooseAsset(current);
+  if (!coin) { message('Choose the affected asset for your 24-hour directional view.'); cancelDrag(); renderDeck(current.id); return; }
   const post = current, token = generation;
   busy = true; updateControls();
   const article = $('deck').querySelector('.pulse-card');
@@ -156,11 +164,12 @@ async function react(decision) {
     await article.animate([{ transform: getComputedStyle(article).transform, opacity: 1 }, { transform: `translateX(${direction * Math.min(innerWidth, 700)}px) rotate(${direction * 16}deg)`, opacity: 0 }], { duration: 280, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'forwards' }).finished.catch(() => {});
   }
   if (token !== generation) return;
-  history.push({ id: post.id, previous: reactions[post.id] || null, type: 'reaction' }); history = history.slice(-100);
-  reactions = recordReaction(reactions, post, decision, market);
+  const eventId = portfolio.record(post, decision === 'agree' ? 1 : -1, coin);
+  history.push({ id: post.id, previous: reactions[post.id] || null, type: 'reaction', eventId }); history = history.slice(-100);
+  reactions = recordReaction(reactions, { ...post, markets: [coin] }, decision, coin);
   seen.add(post.id);
   const stored = save();
-  message(`${decision === 'agree' ? 'Like / agree' : 'Dislike / disagree'} recorded for @${post.author.username}${stored ? ' in this browser.' : ' for this visit; browser storage is unavailable.'}`);
+  message(`${decision === 'agree' ? 'Bullish' : 'Bearish'} ${marketName(coin)} view recorded for the next 24 hours${stored ? ' in this browser.' : ' for this visit; browser storage is unavailable.'}`);
   renderDeck();
 }
 
@@ -253,7 +262,7 @@ $('skip-button').addEventListener('click', () => { if (!current || busy) return;
 $('undo-button').addEventListener('click', () => {
   if (busy || !history.length) return;
   const last = history.pop(); seen.delete(last.id); skipped.delete(last.id);
-  if (last.type === 'reaction') { if (last.previous) reactions[last.id] = last.previous; else delete reactions[last.id]; save(); }
+  if (last.type === 'reaction') { if (last.previous) reactions[last.id] = last.previous; else delete reactions[last.id]; portfolio.undo(last.eventId); save(); }
   message('Last action undone.'); renderDeck(last.id);
 });
 for (const button of document.querySelectorAll('[data-signal-market]')) button.addEventListener('click', () => {
@@ -267,11 +276,11 @@ $('refresh-feed').addEventListener('click', loadFeed);
 if ($('connect-feed')) $('connect-feed').addEventListener('click', loadFeed);
 $('feed-access').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); loadFeed(); } });
 $('export-reactions').addEventListener('click', () => {
-  const output = { schema: 'almond.market-pulse.reactions.v1', exportedAt: new Date().toISOString(), scope: 'This browser only; these are Almond opinions, not X likes, market sentiment, or strategy results.', reactions };
+  const output = { schema: 'almond.market-pulse.directional-views.v2', exportedAt: new Date().toISOString(), scope: 'Private 24-hour directional preferences in this browser. Not X likes, expected returns, or strategy results.', reactions };
   const url = URL.createObjectURL(new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' }));
   const a = el('a'); a.href = url; a.download = 'almond-market-pulse-reactions.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10_000);
 });
-if ($('clear-reactions')) $('clear-reactions').addEventListener('click', () => { reactions = {}; history = []; seen.clear(); skipped.clear(); save(); message('Your saved reactions have been cleared from this browser.'); renderDeck(); });
+if ($('clear-reactions')) $('clear-reactions').addEventListener('click', () => { reactions = {}; history = []; seen.clear(); skipped.clear(); portfolio.clear(); save(); message('Directional views cleared. Your paper positions are held.'); renderDeck(); });
 document.addEventListener('keydown', event => {
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.target.closest('input,select,textarea,button,a,[contenteditable]')) return;
   if (event.key === 'ArrowRight') { event.preventDefault(); react('agree'); }
