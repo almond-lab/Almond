@@ -40,9 +40,8 @@ export class PortfolioController {
     window.addEventListener('pagehide', () => { this.market.stop(); clearInterval(this.decayTimer); this.worker.terminate(); });
     window.addEventListener('pageshow', e => { if (e.persisted) location.reload(); });
     window.addEventListener('storage', e => {
-      if (e.key !== KEY) return;
-      this.invalidatedByOtherTab = true; this.version++; this.pendingPlan = null;
-      this.status('The paper account or beliefs changed in another tab. Reload this page before optimizing or applying a proposal.'); this.updateAvailability();
+      if (e.key !== KEY && e.key !== null) return;
+      if (this.syncStoredSession(e.newValue===null)) this.tryAuto();
     });
     this.renderConvictions(); this.renderAccount(); this.renderResult(); this.updateAvailability();
   }
@@ -90,7 +89,28 @@ export class PortfolioController {
     if (post?.markets.length > 1 && this.postId !== post.id) select.value = '';
     this.postId = post?.id;
   }
+  syncStoredSession(resetMissing=false) {
+    let saved;
+    try { saved=JSON.parse(localStorage.getItem(KEY) || 'null'); } catch { return false; }
+    if (!saved && !resetMissing) return false;
+    if (saved && (saved.schema!==1 || !Number.isSafeInteger(saved.version) || saved.version<0)) return false;
+    const events=Array.isArray(saved?.events)?saved.events.filter(validEvent).slice(-500):[];
+    const account=restorePaperAccount(saved?.account), version=saved?.version ?? 0;
+    // An angle update or another tab consuming its batch must not cancel an
+    // in-flight solve on the same beliefs/account. Only changed inputs do.
+    if (version===this.version && JSON.stringify(events)===JSON.stringify(this.events) && JSON.stringify(account)===JSON.stringify(this.account)) return false;
+    this.events=events;this.account=account;this.version=version;
+    this.pending=new Set((Array.isArray(saved?.pending)?saved.pending:[]).filter(id=>events.some(event=>event.id===id)));
+    if (Array.isArray(saved?.angles) && saved.angles.length===4 && saved.angles.every(Number.isFinite)) this.angles=saved.angles;
+    else this.angles=null;
+    this.active=null;this.running=false;this.pendingPlan=null;this.latest=null;
+    this.changedCoin=null;this.invalidatedByOtherTab=false;
+    this.status('Shared views and paper account synced from another tab. Older proposals were cleared; optimization is available with fresh markets.');
+    this.renderAccount();this.renderConvictions();this.renderResult();
+    return true;
+  }
   record(post, direction, coin) {
+    this.syncStoredSession();
     const beforeScore=conviction(this.events,Date.now()).find(c=>c.coin===coin).score;
     const event = { id:crypto.randomUUID(), coin, direction, thesis:$('view-thesis').value, at:Date.now(), postId:post.id };
     this.events.push(event); this.events = this.events.slice(-500); this.pending.add(event.id); this.version++; this.changedCoin = coin; this.pendingPlan = null;
@@ -99,12 +119,13 @@ export class PortfolioController {
     return event.id;
   }
   undo(id) {
+    this.syncStoredSession();
     if (!this.events.some(e => e.id === id)) return;
     this.changedCoin = this.events.find(e => e.id === id).coin;
     this.events = this.events.filter(e => e.id !== id); this.pending.delete(id); this.version++; this.pendingPlan = null;
     this.renderConvictions(); this.renderResult(); this.save(); this.status('Original directional event removed. Any older proposal is historical.');
   }
-  clear() { this.events=[]; this.pending.clear(); this.version++; this.pendingPlan=null; this.renderConvictions(); this.renderResult(); this.save(); }
+  clear() { this.syncStoredSession(); this.events=[]; this.pending.clear(); this.version++; this.pendingPlan=null; this.renderConvictions(); this.renderResult(); this.save(); }
   fresh() {
     const values = this.market?.values() || [];
     if (values.length !== 4 || values.some(m => !m.valid || !Number.isFinite(m.bookTime) || !Number.isFinite(m.contextTime) || m.bookTime>Date.now()+10_000 || m.contextTime>Date.now()+10_000 || !Number.isFinite(m.mark) || m.mark <= 0 || !Number.isFinite(m.oracle) || m.oracle <= 0 || !Number.isFinite(m.funding) || Date.now()-m.bookTime>15_000 || Date.now()-m.contextTime>60_000 || !m.bids.length || !m.asks.length || m.asks[0].px < m.bids[0].px)) throw new Error('Optimization is paused until all four instruments have fresh books and verified reference inputs. Current positions are held.');
@@ -116,6 +137,7 @@ export class PortfolioController {
   }
   tryAuto() { if (this.pending.size>=10 && !this.running && !this.invalidatedByOtherTab) { try { this.fresh(); this.optimize('ten swipes'); } catch { this.updateAvailability(); } } }
   optimize(trigger) {
+    this.syncStoredSession();
     if (this.running || this.invalidatedByOtherTab) return;
     let snapshot; try { snapshot=this.snapshot(); } catch(e) { this.status(e.message); return; }
     const seed=crypto.getRandomValues(new Uint32Array(1))[0];
@@ -131,7 +153,8 @@ export class PortfolioController {
     this.running=false;
     if (data.type === 'error') { this.status(`Local circuit failed: ${data.message || data.error || 'unknown error'}. Current positions are held.`); this.updateAvailability(); return; }
     this.latest={snapshot:this.active.snapshot,result:data.result,previousChoices:this.active.previousChoices}; this.runs.push(this.latest); this.runs=this.runs.slice(-6); this.angles=data.result.angles; this.save();
-    this.status(this.isHistorical() ? 'The completed snapshot is historical because views or positions changed. It cannot be applied.' : data.result.selected ? 'One joint sampled proposal is ready. Review its paper rebalance before applying.' : 'No feasible sampled candidate. Current portfolio is held; the classical reference remains separate.');
+    const flatReference=data.result.exact?.choices.every(choice=>choice===0) && this.account.positions.every(position=>position.qty===0);
+    this.status(this.isHistorical() ? 'The completed snapshot is historical because views or positions changed. It cannot be applied.' : flatReference ? 'Optimization completed. The exact optimum is flat at these convictions and modeled costs; holding cash is a valid result. Compare the sampled proposal before any paper rebalance.' : data.result.selected ? 'One joint sampled proposal is ready. Review its paper rebalance before applying.' : 'No feasible sampled candidate. Current portfolio is held; the classical reference remains separate.');
     window.dispatchEvent(new CustomEvent('qswipe:run',{detail:{phase:'finished',historical:this.isHistorical(),selected:!!data.result.selected}}));$('angle-state').textContent='Angles: updated by the fixed-budget local retune.'; this.renderConvictions(); this.renderResult(); this.tryAuto();
   }
   isHistorical() { return !this.latest || this.latest.snapshot.version!==this.version || this.latest.snapshot.accountRevision!==this.account.revision || Date.now()-this.latest.snapshot.createdAt>300_000 || this.invalidatedByOtherTab; }
@@ -176,7 +199,7 @@ export class PortfolioController {
   renderResult() {
     const tbody=$('allocation-rows');tbody.replaceChildren();const result=this.latest?.result;
     for(let i=0;i<4;i++){const row=document.createElement('tr');cell(row,names[i],'th').scope='row';cell(row,result?.selected?`${side(result.selected.choices[i])}${result.selected.choices[i]?' 20%':''}`:'—');cell(row,result?.exact?`${side(result.exact.choices[i])}${result.exact.choices[i]?' 20%':''}`:'—');tbody.append(row);}
-    if(!result){$('proposal-state').textContent=this.running?'RETUNING · frozen snapshot; paper positions held':'No current local result. Optimize to propose a joint portfolio.';if(this.running){$('run-version').textContent=`Retuning frozen snapshot v${this.active.snapshot.version}; samples have not returned yet.`;$('run-metrics').replaceChildren();$('sample-rows').replaceChildren();$('old-new-cost').textContent='';$('cost-breakdown').textContent='';}this.updateAvailability();return;}
+    if(!result){$('proposal-gap').textContent='The classical reference independently checks all 81 valid targets.';$('hold-comparison').textContent='Paper positions change only after reviewing and confirming a fresh proposal.';$('proposal-state').textContent=this.running?'RETUNING · frozen snapshot; paper positions held':'No current local result. Optimize to propose a joint portfolio.';if(this.running){$('run-version').textContent=`Retuning frozen snapshot v${this.active.snapshot.version}; samples have not returned yet.`;$('run-metrics').replaceChildren();$('sample-rows').replaceChildren();$('old-new-cost').textContent='';$('cost-breakdown').textContent='';}this.updateAvailability();return;}
     $('proposal-state').textContent=this.isHistorical()?'HISTORICAL · expired snapshot or newer beliefs / positions':`LOCAL SIMULATION · frozen snapshot v${this.latest.snapshot.version}`;
     const hold=result.holdComparison;$('hold-comparison').textContent=hold?`Current marked holdings (off-grid Hold) cost ${number(hold.heldCost)} · sampled improvement ${number(hold.improvement)} · required ${number(hold.minimumImprovement)}. ${hold.eligible?'Candidate clears the improvement gate.':'Hold: candidate does not clear the improvement gate.'}`:'No sampled candidate: hold current quantities.';
     $('proposal-gap').textContent=result.selected?`QAOA sampled cost ${number(result.selected.cost)} · exact ${number(result.exact.cost)} · gap ${number(result.gap)}. Best sampled is not a global-optimum guarantee.`:'No feasible sampled candidate: hold. Exact reference is not substituted.';
@@ -199,6 +222,7 @@ export class PortfolioController {
     try{const plan=planPaperRebalance(this.account,selected.choices,this.fresh(),{snapshotId:this.latest.snapshot.id});this.pendingPlan={mode,version:this.version,choices:selected.choices,plan};$('paper-confirm').hidden=false;$('paper-confirm-note').textContent=`${mode==='classical'?'EXACT CLASSICAL REFERENCE':'QAOA ACTUALLY SAMPLED CANDIDATE'} · ${plan.noChange?'No change is a valid outcome; no fills or fees.':`${plan.legs.length} simulated legs; estimated fill fees ${money(plan.legs.reduce((s,l)=>s+l.fee,0))}.`} Quotes are rechecked on confirmation.`;const legs=$('paper-legs');legs.replaceChildren();for(const l of plan.legs){const n=document.createElement('p');n.className='portfolio-note';n.textContent=`${l.coin} ${l.side} ${l.filledQty.toLocaleString(undefined,{maximumFractionDigits:8})} @ ${money(l.price)} · fees ${money(l.fee)}`;legs.append(n);}this.updateAvailability();}catch(e){this.status(e.message);}
   }
   apply() {
+    this.syncStoredSession();
     if(!this.pendingPlan || this.isHistorical() || this.pendingPlan.version!==this.version)return;
     try{const p=this.pendingPlan;const plan=planPaperRebalance(this.account,p.choices,this.fresh(),{snapshotId:this.latest.snapshot.id});if(Date.now()-p.plan.createdAt>60_000)throw new Error('Paper confirmation expired. Review fresh execution quotes again.');const quoted=p.plan.legs.reduce((s,l)=>s+l.notional,0),fresh=plan.legs.reduce((s,l)=>s+l.notional,0);if(quoted&&Math.abs(fresh-quoted)/quoted>.005)throw new Error('Execution quote changed by more than 50 bp. Review the rebalance again.');this.account=plan.next;this.pendingPlan=null;$('paper-confirm').hidden=true;if(!plan.noChange)this.version++;this.save();this.renderAccount();this.renderResult();this.status(plan.noChange?'No-change portfolio confirmed. No fills, fees or position changes.':`${p.mode==='classical'?'Classical':'Sampled QAOA'} paper rebalance applied. All quantities, fills and fees are simulated; no exchange orders were sent.`);}catch(e){this.status(e.message);this.pendingPlan=null;$('paper-confirm').hidden=true;this.updateAvailability();}
   }
