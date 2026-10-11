@@ -140,7 +140,7 @@ export class PortfolioController {
     if (data.type === 'error') { this.status(`Local circuit failed: ${data.message || data.error || 'unknown error'}. Current positions are held.`); this.updateAvailability(); return; }
     this.latest={snapshot:this.active.snapshot,result:data.result,previousChoices:this.active.previousChoices}; this.runs.push(this.latest); this.runs=this.runs.slice(-6); this.angles=data.result.angles; this.save();
     this.status(this.isHistorical() ? 'The completed snapshot is historical because views or positions changed. It cannot be applied.' : data.result.selected ? 'One joint sampled proposal is ready. Review its paper rebalance before applying.' : 'No feasible sampled candidate. Current portfolio is held; the classical reference remains separate.');
-    $('angle-state').textContent='Angles: updated by the fixed-budget local retune.'; this.renderResult(); this.tryAuto();
+    $('angle-state').textContent='Angles: updated by the fixed-budget local retune.'; this.renderConvictions(); this.renderResult(); this.tryAuto();
   }
   isHistorical() { return !this.latest || this.latest.snapshot.version!==this.version || this.latest.snapshot.accountRevision!==this.account.revision || this.invalidatedByOtherTab; }
   updateAvailability() {
