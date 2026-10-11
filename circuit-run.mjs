@@ -8,7 +8,7 @@ export class CircuitRun {
     document.querySelector('#optimization-workspace').append(this.root);
     this.rows = []; this.replayTimers = [];
     this.root.querySelector('.run-replay').addEventListener('click', () => this.replay());
-    this.root.querySelector('.run-diagram').innerHTML = `<svg viewBox="0 0 720 272" role="img" aria-label="Eight-qubit QAOA circuit: Hadamard preparation, cost phase, mixer, repeated layers and measurement">${['H','Rz / Rzz','Rx','× layers','M'].map((label,i)=>`<text x="${140+i*125}" y="18" text-anchor="middle" class="run-column-label">${label}</text>`).join('')}${Array.from({length:8},(_,q)=>`<text x="8" y="${48+q*30}" class="run-wire-label">${['BTC','SP500','Brent','Gold'][Math.floor(q/2)]} ${q%2?'short':'long'}</text><line x1="105" x2="695" y1="${44+q*30}" y2="${44+q*30}"/>${['prepare','retune','retune','retune','sample'].map((stage,i)=>`<rect data-stage="${stage}" x="${123+i*125}" y="${33+q*30}" width="34" height="22" rx="5"/><text x="${140+i*125}" y="${48+q*30}" text-anchor="middle">${['H','Z','X','↻','M'][i]}</text>`).join('')}`).join('')}</svg>`;
+    this.root.querySelector('.run-diagram').innerHTML = `<svg viewBox="0 0 720 272" role="img" aria-label="Eight-qubit QAOA circuit: Hadamard preparation, cost phase, mixer, repeated layers and measurement">${['H','Rz / Rzz','Rx','× layers','M'].map((label,i)=>`<text x="${140+i*125}" y="18" text-anchor="middle" class="run-column-label">${label}</text>`).join('')}${Array.from({length:8},(_,q)=>`<text x="8" y="${48+q*30}" class="run-wire-label">${['BTC','SP500','Brent','Gold'][Math.floor(q/2)]} ${q%2?'short':'long'}</text><line x1="105" x2="695" y1="${44+q*30}" y2="${44+q*30}"/>${['prepare','cost','mixer','layers','sample'].map((stage,i)=>`<rect data-stage="${stage}" x="${123+i*125}" y="${33+q*30}" width="34" height="22" rx="5"/><text x="${140+i*125}" y="${48+q*30}" text-anchor="middle">${['H','Z','X','↻','M'][i]}</text>`).join('')}`).join('')}</svg>`;
   }
   start(snapshot, warm, trigger) {
     this.resetReplay(); this.root.querySelector('.run-replay').hidden = true;
@@ -28,7 +28,7 @@ export class CircuitRun {
     this.rows.push(`[${(elapsed/1000).toFixed(3)}s] ${message}`);
     const pre = this.root.querySelector('pre'); pre.textContent = this.rows.join('\n'); pre.scrollTop = pre.scrollHeight;
   }
-  activate(stage) { this.root.querySelectorAll('[data-stage]').forEach(g=>g.classList.toggle('active',g.dataset.stage===stage)); }
+  activate(stage) { this.root.querySelectorAll('[data-stage]').forEach(g=>g.classList.toggle('active',g.dataset.stage===stage || (stage==='retune' && ['cost','mixer','layers'].includes(g.dataset.stage)))); }
   progress(event) {
     this.root.querySelector('progress').value = event.percent;
     this.status(event.message); this.activate(event.stage); this.log(event.message, event.elapsedMs);
@@ -40,6 +40,7 @@ export class CircuitRun {
     this.status(`Completed in ${result.timing.totalMs.toFixed(1)} ms · ${result.metrics.evaluations} evaluations · ${result.resources.shots} sampled shots. Automatic paper rebalance follows.`);
     this.log(`Completed · feasible sampled target: ${result.selected ? 'yes' : 'none'} · exact optimum gap: ${result.gap ?? 'unavailable'}`,result.timing.totalMs);
     this.root.querySelector('.run-budget').textContent = 'Local classical simulation · no QPU job';
+    this.replay();
   }
   resetReplay() {
     this.replayTimers.forEach(clearTimeout); this.replayTimers = []; this.root.dataset.replay = 'false';
@@ -48,8 +49,8 @@ export class CircuitRun {
     this.resetReplay(); this.root.dataset.replay = 'true';
     this.root.querySelector('.run-badge').textContent = 'Completed · visual replay';
     // Slow schematic replay is separate from the already-completed CPU solve.
-    ['prepare','retune','retune','sample'].forEach((stage,i)=>this.replayTimers.push(setTimeout(()=>this.activate(stage),i*700)));
-    this.replayTimers.push(setTimeout(()=>{this.resetReplay();this.root.querySelector('.run-badge').textContent='Completed';},2800));
+    ['prepare','cost','mixer','cost','mixer','sample'].forEach((stage,i)=>this.replayTimers.push(setTimeout(()=>this.activate(stage),i*550)));
+    this.replayTimers.push(setTimeout(()=>{this.resetReplay();this.root.querySelector('.run-badge').textContent='Completed';},3300));
   }
   stop(message) {
     this.resetReplay(); this.root.querySelector('.run-replay').hidden = true;

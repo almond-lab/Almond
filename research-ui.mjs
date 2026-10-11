@@ -1,3 +1,6 @@
+import hljs from './assets/highlight/core.mjs';
+import pythonGrammar from './assets/highlight/languages/python.mjs';
+hljs.registerLanguage('python',pythonGrammar);
 import katex from './assets/katex/katex.mjs';
 import { portfolio } from './signals.js';
 import { makeSKInstance, runSK } from './sk-research.mjs';
@@ -38,6 +41,6 @@ research.after(section);
 for(const [label,title,formula,copy]of cards){const card=document.createElement('article');card.className='math-card';const eyebrow=document.createElement('p');eyebrow.className='eyebrow';eyebrow.textContent=label;const heading=document.createElement('h3');heading.textContent=title;const equation=document.createElement('div');equation.className='math-equation';katex.render(formula,equation,{displayMode:true,throwOnError:true,output:'htmlAndMathml',trust:false});const note=document.createElement('p');note.textContent=copy;card.append(eyebrow,heading,equation,note);section.querySelector('.math-grid').append(card);}
 window.addEventListener('qswipe:state',()=>{const run=portfolio.latest;if(run)document.getElementById('math-snapshot').textContent=`Frozen snapshot v${run.snapshot.version} · c = [${run.snapshot.convictions.map(x=>x.toFixed(3)).join(', ')}] · sampled cost ${run.result.selected?.cost.toFixed(6)??'unavailable'} · exact cost ${run.result.exact?.cost.toFixed(6)??'unavailable'} · demo constraint ${run.snapshot.experiment?.forceRebalance?'enabled':'disabled'}.`;});
 let python='';
-try { const response=await fetch('/qollab/main.py');if(!response.ok)throw new Error('Python source could not load');python=await response.text();document.getElementById('python-source').textContent=python; }
+try { const response=await fetch('/qollab/main.py');if(!response.ok)throw new Error('Python source could not load');python=await response.text();const code=document.getElementById('python-source');code.className='hljs language-python';code.innerHTML=hljs.highlight(python,{language:'python',ignoreIllegals:true}).value; }
 catch(e){document.getElementById('python-source').textContent=e.message+' — use the download link.';}
 document.getElementById('copy-python').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(python);document.getElementById('python-copy-status').textContent='Python code copied.';}catch{document.getElementById('python-copy-status').textContent='Use Download main.py or select the code to copy.';}});

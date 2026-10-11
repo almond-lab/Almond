@@ -93,13 +93,13 @@ The exact reference independently enumerates the 81 ternary targets, applies the
 | Tab | What happens there |
 | --- | --- |
 | **Swipe** | Market conversations, smooth gestures, convictions and batch progress |
-| **Portfolio** | The 10,000 USDC paper account, current positions, fees and ledger |
+| **Portfolio** | The 10,000 USDC paper account, actual marked position weights, separate conviction scores, fees and ledger |
 | **Optimize Portfolio** | Automatic redirects when a run starts; live circuit progress, console toggle, replay and allocation result |
 | **How it works** | Six interactive steps, with teaching examples isolated from your account |
 | **Quantum Lab** | Rendered LaTeX, the cost function, QUBO/Ising mapping, circuit stages, probabilities and benchmark evidence |
-| **Python Code** | Actual executable Qollab source, copy controls and downloads |
+| **Python Code** | Actual executable Qollab source with locally bundled Highlight.js IDE-style syntax coloring, copy controls and downloads |
 
-GC Artum, orange, warm cream and dark surfaces give the interface its Almond identity. Touch, mouse, keyboard controls and optional haptics keep the swipe interaction responsive. The circuit panel lives inside Optimize Portfolio rather than following you around every page.
+GC Artum, orange, warm cream and dark surfaces give the interface its Almond identity. Touch, mouse, keyboard controls and optional haptics keep the swipe interaction responsive. The circuit panel lives inside Optimize Portfolio rather than following you around every page. Every completed local solve automatically starts a clearly labelled visual replay, without delaying actual allocation or disguising the fast CPU computation.
 
 ## Research spotlight: the QAOA connection
 
