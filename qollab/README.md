@@ -1,8 +1,24 @@
-# QSwipe · portable joint portfolio experiment
+# QSwipe · Qollab-native joint portfolio experiment
 
-This folder runs independently of the website. It includes a **synthetic teaching snapshot**, a local CPU/Aer demo, and a one-off Qollab runner. No credentials or provider account are needed for the local demo. The included prices, convictions, covariance and cost estimates are hypothetical.
+This starter follows Qollab's browser runtime and uses the **pre-created `backend`**. It needs Qiskit and the Python standard library only. **No Qiskit Aer, provider setup, API key, or optional Libraries toggle is required.** The included `snapshot.json` is a labelled synthetic teaching example; prices, beliefs and cost estimates are hypothetical.
 
-## Local Python run
+## Run on Qollab
+
+1. Create a **Python / Qiskit** project, or choose **Upload your own files** and unpack the starter ZIP.
+2. Keep `main.py`, `snapshot.json` and `requirements.txt` at the project root. Do not upload the whole website repository: its `index.html` and `main.js` would select a different runtime.
+3. Replace the old `requirements.txt` with the one in this starter. It contains only `qiskit>=2.5.2,<3.0.0`. Remove any old `qiskit-aer` / `qiskit_aer` line. Leave optional libraries off.
+4. Press **Run**, select **Qiskit BasicSimulator / built-in simulator**, and leave **Shots** at 1024 for your first test.
+5. Read the joint sampled portfolio, exact reference, cost gap, validity, cap feasibility and Hold comparison in the console. The console also receives `qollab_result.json` through Qollab's `sendFile` API.
+
+Qollab executes `main.py` top to bottom, then automatically calls `def main(shots: int = 1024)`. Do **not** add a `main()` call at the bottom: that would submit twice. The runner passes the injected `backend` to `evaluate_portfolio()`, compiles at optimization level 0, and makes **one** `backend.run()` call. It does not instantiate a backend or silently switch to simulation if your selected backend fails.
+
+The literal `"snapshot.json"` in the code lets Qollab discover and load the data file. Uploaded Python files can import each other normally. Files written during a run are temporary; `sendFile` exposes the report in the console rather than relying on persistent disk storage.
+
+Verified on 11 October 2026 in Qollab's actual browser/Pyodide runtime with these files supplied locally to the browser: the built-in simulator returned 1,024 shots and the console received the JSON report. No public project was changed or IonQ job submitted. The teaching angles are untrained, so a poor sampled proposal can correctly fail the Hold comparison. Remote hardware execution remains unverified.
+
+For your own frozen website experiment, export the QSwipe snapshot, rename it `snapshot.json`, and replace the teaching file. New website swipes never modify that uploaded snapshot or submit a Qollab job. The backend selected in Qollab determines whether the one-off run is local simulation, remote simulation, or hardware. The IonQ one-job-per-Run rule remains respected.
+
+## Desktop teaching demo (optional)
 
 Use Python 3.10 or newer:
 
@@ -13,30 +29,19 @@ python -m venv .venv
 # Windows PowerShell: .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 python local_demo.py --seed 731
-```
-
-`local_demo.py` retunes four QAOA angles with **48 exact CPU state-vector evaluations**, including invalid samples in the expectation. It then makes **one local Aer simulator submission** for 1,024 shots. It writes `local_demo_result.json`. This is classical simulation of a quantum circuit, not a QPU run or a speedup result.
-
-To inspect the document's unoptimized illustrative angles instead:
-
-```sh
+# Sample the document's original untrained angles instead:
 python local_demo.py --seed 731 --no-retune
-# Alternatively, one frozen local sample without retuning:
-python main.py --local
 ```
 
-The teaching `snapshot.json` is unchanged by these commands. A fixed seed reproduces the local sample distribution on the same dependency versions. Timings can vary by machine and are not a computational-speedup benchmark.
+`local_demo.py` uses NumPy (a Qiskit dependency) for 48 exact CPU state-vector retuning evaluations, then one seeded Qiskit **BasicSimulator** job for 1,024 shots. It requires no Aer and writes `local_demo_result.json` in your current directory. It is a desktop CLI helper, not the Qollab entry point. The frozen teaching snapshot is unchanged. Results are classical simulation, not a QPU run or speedup evidence. Fixed seeds reproduce counts on the same dependency versions; timings vary by machine.
 
-## Run once on Qollab
+## Runtime compatibility and sources
 
-1. Upload `main.py` and `snapshot.json` together into a Qollab project. The included snapshot is enough for a teaching run; no browser export is required.
-2. Qollab must expose a pre-created Qiskit-compatible variable called `backend`.
-3. Press Run once. `main.py` calls `backend.run(compiled, shots=...)` **exactly once**. It never trains remotely, retries a submission, connects directly to a provider, or reads API credentials.
-4. Inspect stdout and `qollab_result.json`. Whether the job is a simulator or hardware execution depends on the backend Qollab supplied.
+We inspected the Code tabs of [Musiq](https://qollab.xyz/u/doraking/musiq), [Quantum Market Game Theory Simulator](https://qollab.xyz/u/q-aad/quantum-market-game-theory-sim), [Entangled Body](https://qollab.xyz/u/lukeshim/entangled-body), and [QCFlows: Multi-file Example](https://qollab.xyz/u/qollab/qcflows-multifile). Their patterns inform this starter; no project source is copied.
 
-The backend must support Qiskit's circuit `run` and `job.result().get_counts(0)` contract. A primitive-only Sampler interface requires a separate adapter. If Qollab executes files by importing rather than running them as scripts, invoke `main(backend)` once after importing the module.
+Qollab's [runtime docs](https://qollab.xyz/learn/docs/runtime-environment) describe Pyodide, the typed `main()` convention, literal data-file discovery and `sendFile`. [Python / Qiskit projects](https://qollab.xyz/learn/docs/python-qiskit-projects) documents the injected backend. [Upload docs](https://qollab.xyz/learn/docs/upload-your-files) explain top-level entry points and archive extraction. [Transpilation](https://qollab.xyz/learn/docs/transpilation) explains optimization levels and device compilation.
 
-To evaluate your own frozen website experiment, replace the synthetic snapshot with an export named `snapshot.json`. New swipes do not modify that file or submit provider jobs automatically.
+Qiskit is always installed; NumPy, SciPy and Matplotlib are Pyodide-provided packages loaded on import. Additional packages need a pure-Python wheel or a compatible Pyodide/WebAssembly build. Desktop compiled wheels are not sufficient. The Libraries menu offers curated packages, including a PQCA bundle that lists a pinned Aer build; that does not make an arbitrary desktop Aer requirement portable or necessary for this project. General project networking permits cross-origin GET requests, not POST, WebSocket or a server listener. This starter needs no outside data service.
 
 ## Mathematics and worked numbers
 

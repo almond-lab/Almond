@@ -1,4 +1,3 @@
-# Local simulator only. Qollab supplies its own backend when main.py is run there.
-numpy>=1.26,<3.0
-qiskit>=2.0,<3.0
-qiskit-aer>=0.17,<1.0
+# Qollab already installs Qiskit. No optional libraries or Aer are needed.
+# This explicit line also supports installing the desktop teaching demo.
+qiskit>=2.5.2,<3.0.0

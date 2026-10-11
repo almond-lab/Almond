@@ -9,7 +9,6 @@ import itertools
 import json
 import math
 import time
-import sys
 import random
 from pathlib import Path
 
@@ -324,16 +323,21 @@ def random_baselines(snapshot, objective, exact, shots, seed=731):
     return outcomes
 
 
-def main(provided_backend, artifact=None, output_name="qollab_result.json", execution_mode="qollab-provided-backend"):
+def evaluate_portfolio(provided_backend, artifact=None, output_name="qollab_result.json", execution_mode="qollab-provided-backend", requested_shots=None):
     if provided_backend is None:
         raise RuntimeError("Qollab must supply the pre-created Qiskit backend named 'backend'; this file does not create or authenticate one")
-    folder = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
-    path = folder / "snapshot.json"
     if artifact is None:
+        # Qollab discovers data files from literal paths relative to the project
+        # root. Keep this literal in the source; do not construct it dynamically.
+        path = Path("snapshot.json")
         if not path.is_file():
             raise FileNotFoundError("Upload the frozen QSwipe export as snapshot.json beside main.py before pressing Run")
         artifact = json.loads(path.read_text(encoding="utf-8"))
     snapshot, objective, shots = validate_artifact(artifact)
+    if requested_shots is not None:
+        if isinstance(requested_shots, bool) or not isinstance(requested_shots, int) or not 1 <= requested_shots <= 4096:
+            raise ValueError("Shots must be an integer from 1 to 4096")
+        shots = requested_shots
     circuit = construct_circuit(artifact)
     classical_started = time.perf_counter()
     exact = classical_reference(snapshot)
@@ -388,16 +392,22 @@ def main(provided_backend, artifact=None, output_name="qollab_result.json", exec
         print(f"Random baseline {name}: {baseline['metrics']['returnedShots']} draws; validity {baseline['metrics']['validityRate']:.4%}; feasibility {baseline['metrics']['feasibleRate']:.4%}; gap {baseline['gap']}")
     print(f"Compilation: {compile_seconds:.4f}s; observed submission/result: {observed_seconds:.4f}s; classical reference: {reference_seconds:.6f}s")
     print("Covariance, friction and funding are frozen estimates. Observed elapsed includes the backend job lifecycle; backend type is determined by Qollab.")
-    output = folder / output_name
-    output.write_text(json.dumps(report, indent=2, allow_nan=False), encoding="utf-8")
-    print(f"Experiment record written to {output.name}")
+    payload = json.dumps(report, indent=2, allow_nan=False)
+    # Pyodide files are temporary; sendFile exposes the result in the console.
+    try:
+        from js import sendFile
+    except ImportError:
+        Path(output_name).write_text(payload, encoding="utf-8")
+        print(f"Experiment record written to {output_name}")
+    else:
+        sendFile(output_name, "application/json", payload)
+        print(f"Experiment record available in the console: {output_name}")
     return report
 
 
-if __name__ == "__main__":
-    provided = globals().get("backend")
-    if "--local" in sys.argv and provided is None:
-        from qiskit_aer import AerSimulator
-        provided = AerSimulator(seed_simulator=731)
-        print("LOCAL AER SIMULATOR · not a QPU or remote provider job")
-    main(provided, execution_mode="local-aer-simulator" if "--local" in sys.argv else "qollab-provided-backend")
+def main(shots: int = 1024):
+    """Qollab automatically calls this after loading the script. Do not call it twice."""
+    return evaluate_portfolio(globals().get("backend"), requested_shots=shots)
+
+# No main() call here: Qollab calls the typed entry point itself, once.
+# For a desktop run, use local_demo.py (Qiskit's built-in BasicSimulator).

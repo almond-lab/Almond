@@ -1,4 +1,4 @@
-"""QSwipe's reproducible local teaching demo: CPU retuning, then one Aer job.
+"""QSwipe's reproducible desktop teaching demo: CPU retuning, then one simulator job.
 
 No QPU or remote provider is invoked. The included snapshot is synthetic.
 Training uses exact 256-amplitude state vectors, including invalid penalties.
@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 import numpy as np
-from qiskit_aer import AerSimulator
+from qiskit.providers.basic_provider import BasicSimulator
 import main as runner
 
 
@@ -76,8 +76,8 @@ def cli():
         print(f"CPU training: {training['evaluations']} evaluations; mean {training['initialExpectedCost']:.9f} -> {training['expectedCost']:.9f}")
         # Pass the retuned frozen artifact explicitly; do not overwrite the
         # included teaching snapshot or perform another backend submission.
-    runner.main(AerSimulator(seed_simulator=args.seed), artifact=artifact,
-                output_name="local_demo_result.json", execution_mode="local-aer-simulator")
+    runner.evaluate_portfolio(BasicSimulator(seed_simulator=args.seed), artifact=artifact,
+                output_name="local_demo_result.json", execution_mode="local-basic-simulator")
 
 
 if __name__ == "__main__":
