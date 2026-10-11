@@ -1,10 +1,10 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { SIGNAL_MARKETS, matchedMarkets } from '../signal-model.mjs';
 
-const TTL = 300_000;
+const TTL = 60_000;
 const API = 'https://api.x.com/2/tweets/search/recent';
 function reply(status, body, guarded = true) {
-  return Response.json(body, { status, headers: { 'Cache-Control': guarded || status !== 200 || body.state !== 'live' ? 'no-store' : 'public, max-age=0, s-maxage=300', 'X-Content-Type-Options': 'nosniff' } });
+  return Response.json(body, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 }
 function allowedURL(raw, kind) {
   try {
@@ -53,7 +53,7 @@ export function feedQuery(market, accounts = '') {
 }
 
 export function createXFeedService({ env = process.env, fetcher = globalThis.fetch, now = Date.now } = {}) {
-  // Bounded, per-instance caching and request coalescing. Public responses also use Vercel's CDN cache.
+  // Bounded, per-instance caching and request coalescing. Responses bypass CDN/browser caches so only this bounded freshness window applies.
   const cache = new Map();
   return async function handleXFeed(request) {
     if (request.method !== 'GET') return reply(405, { error: 'method_not_allowed', message: 'This feed is read-only. Use GET.' });
@@ -63,7 +63,7 @@ export function createXFeedService({ env = process.env, fetcher = globalThis.fet
     if ([...params.keys()].some(k => k !== 'market') || params.getAll('market').length > 1) return reply(400, { error: 'invalid_parameters', message: 'Use only one market selector.' });
     const market = params.get('market') || 'all';
     if (market !== 'all' && !SIGNAL_MARKETS.some(m => m.coin === market)) return reply(400, { error: 'invalid_market', message: 'Choose one of Almond’s four markets.' });
-    const base = { provider: 'X', market, refreshAfterSeconds: 300, requiresAccessCode: Boolean(access), posts: [] };
+    const base = { provider: 'X', market, refreshAfterSeconds: 60, requiresAccessCode: Boolean(access), posts: [] };
     if (!key) return reply(200, { ...base, state: 'setup', note: 'Connect X API recent-search access in Vercel to load real posts. No sample posts are shown.' });
     if (access) {
       const supplied = request.headers.get('authorization')?.replace(/^Bearer /, '') || '';
@@ -74,9 +74,9 @@ export function createXFeedService({ env = process.env, fetcher = globalThis.fet
     try { query = feedQuery(market, env.X_FEED_ACCOUNTS || ''); }
     catch { return reply(503, { ...base, state: 'error', error: 'invalid_configuration', message: 'The server’s X source-account configuration needs correction.' }); }
     let entry = cache.get(market);
-    if (entry && now() - entry.at < TTL) {
+    if (entry && now() - entry.at < (entry.status===429?300_000:TTL)) {
       const body = await entry.promise;
-      return reply(entry.status, body, Boolean(access));
+      return reply(entry.status, {...body, refreshAfterSeconds:Math.max(1,Math.ceil(((entry.status===429?300_000:TTL)-(now()-entry.at))/1000))}, Boolean(access));
     }
     entry = { at: now(), status: 200 };
     entry.promise = (async () => {
@@ -97,7 +97,7 @@ export function createXFeedService({ env = process.env, fetcher = globalThis.fet
           return { ...base, state: 'error', error: denied ? 'provider_access' : response.status === 429 ? 'rate_limited' : 'provider_error', message: denied ? 'The server’s X token needs recent-search permission and available API credits.' : response.status === 429 ? 'X has rate limited this feed. Wait five minutes before refreshing.' : 'X could not supply this batch. Try refreshing later.' };
         }
         const normalized = normalizeXResponse(await response.json(), market);
-        return { ...base, state: 'live', posts: normalized.posts, fetchedAt: new Date(now()).toISOString(), query, partial: normalized.partial, note: normalized.partial ? 'X returned a partial batch. Topic matches indicate relevance, not a verified price impact.' : 'Recent English-language posts matched to this topic. Refreshed at most every five minutes; relevance does not establish price impact.' };
+        return { ...base, state: 'live', posts: normalized.posts, fetchedAt: new Date(now()).toISOString(), query, partial: normalized.partial, note: normalized.partial ? 'X returned a partial batch. Topic matches indicate relevance, not a verified price impact.' : 'Recent English-language posts matched to this topic. Checked for new posts every minute; relevance does not establish price impact.' };
       } catch {
         entry.status = 502;
         return { ...base, state: 'error', error: 'provider_unavailable', message: 'The X feed could not be reached or returned an unreadable batch. Refresh later.' };

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createXFeedService, feedQuery, normalizeXResponse } from '../server/x-feed-service.mjs';
-import { matchedMarkets, selectPosts, recordReaction, readReactions, reactionCounts, swipeDecision } from '../signal-model.mjs';
+import { matchedMarkets, selectPosts, recordReaction, readReactions, reactionCounts, swipeDecision, readDismissed, mergePostBatches } from '../signal-model.mjs';
 
 const raw = () => ({ data: [
   { id: '1900000000000000001', author_id: '11', created_at: '2026-10-11T01:00:00Z', text: 'Bitcoin and gold price. https://t.co/test1', entities: { urls: [{ url: 'https://t.co/test1', display_url: 'example.org' }] }, public_metrics: { like_count: 3, reply_count: 2, retweet_count: 1 } },
@@ -39,7 +39,7 @@ test('optional feed access guard authenticates before provider reads and avoids 
   assert(!(await response.text()).includes('test-only-secret'));
 });
 
-test('bounded live search caches/coalesces concurrent reads and expires after five minutes', async () => {
+test('bounded live search caches/coalesces concurrent reads and expires after one minute', async () => {
   let clock = Date.parse('2026-10-11T02:00:00Z'), calls = 0;
   const handler = createXFeedService({ env: { X_BEARER_TOKEN: 'test-only-secret' }, now: () => clock, fetcher: async (url, options) => {
     calls++; const u = new URL(url);
@@ -51,9 +51,9 @@ test('bounded live search caches/coalesces concurrent reads and expires after fi
   } });
   const [a,b] = await Promise.all([handler(request()), handler(request())]);
   assert.equal(calls, 1); const body = await a.json(); assert.equal(body.state, 'live'); assert.equal(body.posts.length, 2);
-  assert.equal(b.headers.get('cache-control'), 'public, max-age=0, s-maxage=300');
+  assert.equal(b.headers.get('cache-control'), 'no-store');
   await handler(request()); assert.equal(calls, 1);
-  clock += 300_001; await handler(request()); assert.equal(calls, 2);
+  clock += 60_001; await handler(request()); assert.equal(calls, 2);
 });
 
 test('normalization preserves full note text, timestamps, source links and safe author/media URLs', () => {
@@ -120,4 +120,23 @@ test('a deliberate fast flick can commit while jitter, reversed release and vert
   assert.equal(swipeDecision(48,70,500,.8),null);
   assert.equal(swipeDecision(NaN,0,500,1),null);
   assert.equal(swipeDecision(100,0,0,1),null);
+});
+
+test('dismissal history is bounded, deduplicated and safe to restore across market changes and reloads',()=>{
+  assert.deepEqual(readDismissed({seen:['1','1','bad',null],skipped:['2']}),{seen:['1'],skipped:['2']});
+  assert.equal(readDismissed({seen:Array.from({length:1500},(_,i)=>String(i))}).seen.length,1000);
+  assert.deepEqual(readDismissed(null),{seen:[],skipped:[]});
+});
+test('batch merging prioritizes new posts, updates existing posts and retains unreviewed backlog without duplicates',()=>{
+  const old=normalizeXResponse(raw(),'all').posts,newPost={...old[0],id:'1900000000000000003',createdAt:'2026-10-11T03:00:00Z'};
+  const merged=mergePostBatches(old,[newPost,{...old[0],text:'Bitcoin updated text'}]);
+  assert.equal(merged.length,3);assert.equal(merged[0].id,newPost.id);assert.equal(merged[2].text,'Bitcoin updated text');
+  assert.equal(mergePostBatches(old,[newPost],2).length,2);
+});
+test('cached batches expose time remaining rather than restarting a full client polling window',async()=>{
+  let clock=100000,calls=0;
+  const handler=createXFeedService({env:{X_BEARER_TOKEN:'test-only-secret'},now:()=>clock,fetcher:async()=>{calls++;return Response.json(raw());}});
+  assert.equal((await(await handler(request())).json()).refreshAfterSeconds,60);
+  clock+=45000;assert.equal((await(await handler(request())).json()).refreshAfterSeconds,15);assert.equal(calls,1);
+  clock+=15001;await handler(request());assert.equal(calls,2);
 });

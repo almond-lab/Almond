@@ -1,7 +1,8 @@
-import { SIGNAL_MARKETS, readReactions, recordReaction, selectPosts, reactionCounts, swipeDecision } from './signal-model.mjs';
+import { SIGNAL_MARKETS, readReactions, recordReaction, selectPosts, reactionCounts, swipeDecision, readDismissed, mergePostBatches } from './signal-model.mjs';
 import { PortfolioController } from './portfolio-controller.mjs';
 
 // Older agreement reactions are not reinterpreted as directional price views.
+const DISMISSED_KEY = 'qswipe.feed.dismissed.v1';
 const REACTION_KEY = 'almond.pulse.directional-reactions.v2';
 export const portfolio = new PortfolioController();
 
@@ -11,6 +12,9 @@ let market = 'all', posts = [], current = null, reactions = {}, history = [], sk
 let busy = false, loading = false, generation = 0, fetchGeneration = 0, controller, autoTimer, expiryTimer, dataState = 'loading', fetchedAt = null, pointer = null;
 let lastStateNote = 'Connecting to the X feed…';
 try { reactions = readReactions(JSON.parse(localStorage.getItem(REACTION_KEY) || '{}')); } catch { /* Continue without stored reactions. */ }
+
+try { const saved=readDismissed(JSON.parse(localStorage.getItem(DISMISSED_KEY)||'null'));seen=new Set(saved.seen);skipped=new Set(saved.skipped); } catch {}
+function saveDismissed(){try{const saved=readDismissed({seen:[...seen],skipped:[...skipped]});localStorage.setItem(DISMISSED_KEY,JSON.stringify(saved));}catch{}}
 
 function el(tag, cls, text) { const node = document.createElement(tag); if (cls) node.className = cls; if (text !== undefined) node.textContent = text; return node; }
 function link(text, url, cls) { const a = el('a', cls, text); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; }
@@ -140,8 +144,8 @@ function renderDeck(preferredId) {
     const symbol = el('div', 'empty-symbol'); symbol.setAttribute('aria-hidden', 'true'); symbol.append(el('span', '', '↖'), el('span', '', '↗')); empty.append(symbol);
     const title = isStale() ? 'Time for a fresh read.' : dataState === 'loading' ? 'Finding the conversation.' : dataState === 'setup' ? 'Your feed is next.' : dataState === 'locked' ? 'Connect your private feed.' : dataState === 'error' ? 'The feed needs a moment.' : candidates.length || posts.length ? 'You’re through this view.' : 'A quiet moment.';
     empty.append(el('h3', '', title), el('p', '', isStale() ? 'This batch is more than 15 minutes old. Refresh the feed before recording another directional view.' : dataState === 'live' ? 'Refresh for the latest batch, choose another market, or revisit your reviewed posts.' : lastStateNote), el('span', 'empty-footer', dataState === 'setup' ? 'No sample posts. Waiting for the source.' : 'One perspective at a time.'));
-    if (isStale() || dataState === 'error') { const retry=el('button','secondary-button',isStale()?'Refresh live feed ↻':'Try the feed again ↻');retry.type='button';retry.dataset.feedRetry='true';retry.disabled=loading;retry.addEventListener('click',loadFeed);empty.append(retry); }
-    if (!isStale() && dataState === 'live' && candidates.length) { const again = el('button', 'secondary-button', 'Revisit this view ↻'); again.type = 'button'; again.addEventListener('click', () => { seen.clear(); skipped.clear(); renderDeck(); }); empty.append(again); }
+    if (isStale() || dataState === 'error' || dataState === 'live') { const retry=el('button','secondary-button',dataState==='error'?'Try the feed again ↻':'Check for new posts ↻');retry.type='button';retry.dataset.feedRetry='true';retry.disabled=loading;retry.addEventListener('click',()=>loadFeed({prioritizeNew:true}));empty.append(retry); }
+    if (!isStale() && dataState === 'live' && posts.some(post=>market==='all'||post.markets.includes(market))) { const again = el('button', 'secondary-button', 'Revisit this view ↻'); again.type = 'button'; again.addEventListener('click', () => { seen.clear(); skipped.clear(); saveDismissed(); renderDeck(); }); empty.append(again); }
     deck.append(empty);
   }
   renderJournal(); updateControls();
@@ -170,7 +174,7 @@ async function react(decision) {
   const eventId = portfolio.record(post, decision === 'agree' ? 1 : -1, coin);
   history.push({ id: post.id, previous: reactions[post.id] || null, type: 'reaction', eventId }); history = history.slice(-100);
   reactions = recordReaction(reactions, { ...post, markets: [coin] }, decision, coin);
-  seen.add(post.id);
+  seen.add(post.id); saveDismissed();
   const stored = save();
   message(`${decision === 'agree' ? 'Bullish' : 'Bearish'} ${marketName(coin)} view recorded for the next 24 hours${stored ? ' in this browser.' : ' for this visit; browser storage is unavailable.'}`);
   renderDeck();
@@ -231,7 +235,7 @@ function updateMarketLinks() {
   $('search-x').href = `https://x.com/search?q=${encodeURIComponent(m?.topic || SIGNAL_MARKETS.map(item => item.topic).join(' OR '))}&f=live`;
 }
 
-async function loadFeed() {
+async function loadFeed({ prioritizeNew = false } = {}) {
   const token = ++fetchGeneration;
   controller?.abort(); controller = new AbortController(); clearTimeout(autoTimer); clearTimeout(expiryTimer);
   loading = true; dataState = 'loading'; lastStateNote = 'Fetching a recent batch from X…';
@@ -244,7 +248,10 @@ async function loadFeed() {
     if (token !== fetchGeneration) return;
     if (!response.ok) { const error = new Error(result.message || 'This feed could not be loaded.'); error.state = result.state; throw error; }
     dataState = result.state; lastStateNote = result.note;
-    posts = result.posts; fetchedAt = result.fetchedAt || null;
+    const incoming=Array.isArray(result.posts)?result.posts:[],known=new Set(posts.map(p=>p.id));
+    const newCount=incoming.filter(p=>!known.has(p.id)&&!seen.has(p.id)&&!skipped.has(p.id)&&!reactions[p.id]).length;
+    const hadBatch=posts.length>0 || seen.size>0 || skipped.size>0;
+    posts = mergePostBatches(posts,incoming); fetchedAt = result.fetchedAt || null;
     if (fetchedAt) expiryTimer=setTimeout(()=>{if(!isStale())return;$('feed-status').textContent='Feed refresh required';$('feed-status').dataset.state='stale';message('Refresh the feed to continue: these posts are more than 15 minutes old.');renderDeck();},Math.max(0,Date.parse(fetchedAt)+15*60_000-Date.now()+1));
     $('feed-status').textContent = result.state === 'live' ? 'Recent X posts connected' : 'X connection required';
     $('feed-status').dataset.state = result.state;
@@ -252,8 +259,10 @@ async function loadFeed() {
     $('source-time').textContent = fetchedAt ? dateText(fetchedAt) : 'Awaiting connection';
     $('source-time').dateTime = fetchedAt || '';
     const oldId = current?.id;
-    renderDeck(oldId);
-    if (result.state === 'live') autoTimer = setTimeout(() => { if (document.visibilityState === 'visible') loadFeed(); }, 300_000);
+    const newestUnseen=prioritizeNew?selectPosts(incoming,{market,filter:$('review-filter').value,reactions,skipped}).find(post=>!seen.has(post.id))?.id:undefined;
+    renderDeck(prioritizeNew?newestUnseen:oldId);
+    if(result.state==='live' && hadBatch){const note=newCount?`${newCount} new unseen post${newCount===1?'':'s'} available.`:'No new unseen posts in the latest X batch. Checking again shortly.';$('feed-note').textContent=note;message(note);}
+    if (result.state === 'live') autoTimer = setTimeout(() => { if (document.visibilityState === 'visible') loadFeed(); }, Math.max(5,Math.min(300,result.refreshAfterSeconds ?? 60))*1000);
   } catch (error) {
     if (token !== fetchGeneration) return;
     dataState = error.state || 'error'; lastStateNote = error.name === 'AbortError' ? 'The feed refresh was interrupted.' : error.message;
@@ -268,21 +277,21 @@ async function loadFeed() {
 
 $('agree-button').addEventListener('click', () => react('agree'));
 $('disagree-button').addEventListener('click', () => react('disagree'));
-$('skip-button').addEventListener('click', () => { if (!current || busy) return; const id = current.id; skipped.add(id); history.push({ id, type: 'skip' }); message('Skipped for this visit. No reaction recorded.'); renderDeck(); });
+$('skip-button').addEventListener('click', () => { if (!current || busy) return; const id = current.id; skipped.add(id); saveDismissed(); history.push({ id, type: 'skip' }); message('Skipped in this browser. No reaction recorded.'); renderDeck(); });
 $('undo-button').addEventListener('click', () => {
   if (busy || !history.length) return;
-  const last = history.pop(); seen.delete(last.id); skipped.delete(last.id);
+  const last = history.pop(); seen.delete(last.id); skipped.delete(last.id); saveDismissed();
   if (last.type === 'reaction') { if (last.previous) reactions[last.id] = last.previous; else delete reactions[last.id]; portfolio.undo(last.eventId); save(); }
   message('Last action undone.'); renderDeck(last.id);
 });
 for (const button of document.querySelectorAll('[data-signal-market]')) button.addEventListener('click', () => {
   if (button.dataset.signalMarket === market) return;
-  market = button.dataset.signalMarket; seen.clear(); skipped.clear(); posts = []; current = null; fetchedAt = null;
+  market = button.dataset.signalMarket; posts = []; current = null; fetchedAt = null;
   for (const b of document.querySelectorAll('[data-signal-market]')) { b.setAttribute('aria-pressed', String(b === button)); b.classList.toggle('active', b === button); }
   updateMarketLinks(); loadFeed();
 });
-for (const id of ['review-filter', 'feed-sort']) $(id).addEventListener('change', () => { seen.clear(); skipped.clear(); renderDeck(); });
-$('refresh-feed').addEventListener('click', loadFeed);
+for (const id of ['review-filter', 'feed-sort']) $(id).addEventListener('change', () => { renderDeck(); });
+$('refresh-feed').addEventListener('click', () => loadFeed({prioritizeNew:true}));
 if ($('connect-feed')) $('connect-feed').addEventListener('click', loadFeed);
 $('feed-access').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); loadFeed(); } });
 $('export-reactions').addEventListener('click', () => {
@@ -290,7 +299,7 @@ $('export-reactions').addEventListener('click', () => {
   const url = URL.createObjectURL(new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' }));
   const a = el('a'); a.href = url; a.download = 'almond-market-pulse-reactions.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10_000);
 });
-if ($('clear-reactions')) $('clear-reactions').addEventListener('click', () => { reactions = {}; history = []; seen.clear(); skipped.clear(); portfolio.clear(); save(); message('Directional views cleared. Your paper positions are held.'); renderDeck(); });
+if ($('clear-reactions')) $('clear-reactions').addEventListener('click', () => { reactions = {}; history = []; seen.clear(); skipped.clear(); saveDismissed(); portfolio.clear(); save(); message('Directional views cleared. Your paper positions are held.'); renderDeck(); });
 document.addEventListener('keydown', event => {
   if (document.body.dataset.view && document.body.dataset.view !== 'swipe') return;
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.target.closest('input,select,textarea,button,a,[contenteditable]')) return;
@@ -303,7 +312,7 @@ window.addEventListener('storage', event => {
   if (event.key !== REACTION_KEY) return;
   try { reactions = readReactions(JSON.parse(event.newValue || '{}')); history = []; renderDeck(current?.id); } catch { /* Ignore invalid external storage. */ }
 });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && dataState === 'live' && Date.now() - Date.parse(fetchedAt) >= 300_000) loadFeed(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && dataState === 'live' && Date.now() - Date.parse(fetchedAt) >= 60_000) loadFeed(); });
 window.addEventListener('pagehide', () => { clearTimeout(autoTimer); clearTimeout(expiryTimer); controller?.abort(); $('feed-access').value = ''; });
 window.addEventListener('pageshow', event => { if (event.persisted) loadFeed(); });
 updateMarketLinks(); renderJournal(); loadFeed();

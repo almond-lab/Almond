@@ -144,7 +144,7 @@ Public Hyperliquid order books and metadata need no trading credentials. Configu
 - `X_BEARER_TOKEN` enables X recent search. Optional `X_FEED_ACCESS_TOKEN` guards feed reads; `X_FEED_ACCOUNTS` restricts sources.
 - `IONQ_API_KEY` and a ≥32-character `ALMOND_EXECUTION_TOKEN` enable the separate protected provider connector. `IONQ_BACKEND` defaults to simulator; hardware requires explicit `ALMOND_ALLOW_QPU=true`.
 
-X search is periodically refreshed and cached, rather than a streaming firehose. Posts retain attribution and source links. Missing credentials produce a connection state, never fabricated content. Provider keys stay server-side and out of exported snapshots.
+X recent search checks for new posts every minute while the page is visible, with a bounded one-minute server cache. Refresh prioritizes the newest unseen post; reviewed and skipped post IDs are remembered across market changes and reloads. Unread posts are merged into a deduplicated backlog, and an exhausted deck stays exhausted until new results arrive or you explicitly revisit it. This is polling, rather than a streaming firehose. Posts retain attribution and source links. Missing credentials produce a connection state, never fabricated content. Provider keys stay server-side and out of exported snapshots.
 
 Paper buys consume ask depth; sells consume bid depth. Quantities round down to verified lot precision, fit 20% slots using post-cost equity, and obey an 80% gross cap with a conservative 1× margin model. Stale inputs, insufficient depth or a 50 bp distance-from-mid breach prevent an atomic rebalance. Funding affects the objective but is not settled in the initial paper ledger, so displayed P&L excludes it.
 

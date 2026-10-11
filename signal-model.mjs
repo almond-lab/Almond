@@ -43,3 +43,14 @@ export function swipeDecision(dx, dy, width, velocity = 0) {
   const flick=Math.abs(dx)>=42 && Math.abs(velocity)>=.55 && Math.sign(velocity)===Math.sign(dx);
   return (Math.abs(dx) >= threshold || flick) && Math.abs(dx) > Math.abs(dy) * 1.25 ? (dx > 0 ? 'agree' : 'disagree') : null;
 }
+
+/** Persist only bounded post IDs, never feed credentials or post bodies. */
+export function readDismissed(raw) {
+  const ids=value=>Array.isArray(value)?[...new Set(value.filter(id=>typeof id==='string'&&/^\d{1,25}$/.test(id)))].slice(-1000):[];
+  return {seen:ids(raw?.seen),skipped:ids(raw?.skipped)};
+}
+export function mergePostBatches(previous, incoming, limit=200) {
+  const posts=new Map(previous.map(p=>[p.id,p]));
+  for(const post of incoming)posts.set(post.id,post);
+  return [...posts.values()].sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt)||b.id.localeCompare(a.id)).slice(0,limit);
+}
