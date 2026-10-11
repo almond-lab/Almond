@@ -26,11 +26,11 @@ The Vercel build emits static assets, API functions and `qswipe-qollab.zip`. Pub
 The **[qollab/ folder](qollab/README.md)** is independently runnable. It contains a labelled synthetic teaching snapshot, complete Python circuit code, Qollab-only requirements, an optional desktop demo and reproducible example output. A website export is optional.
 
 1. Create a **Python / Qiskit** Qollab project.
-2. Upload `qollab/main.py`, `qollab/snapshot.json` and `qollab/requirements.txt` at the project root, replacing old files. The requirements contain only Qiskit; remove old Aer requirements.
+2. Paste the complete `qollab/main.py` into the editor, or upload the starter ZIP. It contains an embedded synthetic teaching snapshot, so uploading `snapshot.json` is optional. The requirements contain only Qiskit; remove old Aer requirements.
 3. Select a Qiskit-compatible backend. Qollab supplies `backend`; press Run once.
 4. Inspect the sampled portfolio, independent exact reference, cost gap, validity, cap feasibility, random baselines and Hold comparison in the console. Download/copy `qollab_result.json` from the console.
 
-Qollab automatically calls the typed `main(shots: int = 1024)` entry point. Do not add a bottom-of-file call. `main.py` calls `backend.run` exactly once. It does not train remotely, retry submissions, read provider credentials, or send exchange orders. Hardware availability depends on your Qollab backend; actual remote execution has not been verified here. `job.result().get_counts(0)` is the expected backend contract.
+Qollab automatically calls the typed `main()` entry point with shots, optional preview filtering and optional backend compilation. The circuit is constructed and printed at the top level; `main()` directly submits to `backend`, polls status and handles both job/result counts APIs. Do not add a bottom-of-file call. `main.py` calls `backend.run` exactly once. It does not train remotely, retry submissions, read provider credentials, or send exchange orders. Hardware availability depends on your Qollab backend; actual remote execution has not been verified here. `job.result().get_counts(0)` is the expected backend contract.
 
 For a local CPU experiment:
 
@@ -46,7 +46,7 @@ python3 local_demo.py --seed 731 --no-retune
 
 Qiskit 2.5.2 / NumPy 2.5.4 runs were verified; the updated starter and desktop demo use no Aer. The included sample output is from classical simulation, not hardware. Local retuning uses 48 exact state-vector evaluations and one final built-in BasicSimulator job. Equal-budget random baselines can also find the exact optimum in this small grid.
 
-The corrected starter was also verified in Qollab's actual browser/Pyodide runner on the built-in simulator: automatic entry point, literal snapshot loading, 1,024 returned shots, one submission and console JSON export. Eight additional Python regression checks cover that runtime contract (`python3 scripts/test-qollab.py` from the repository root in an environment with Qiskit installed).
+The corrected starter was also verified in Qollab's actual browser/Pyodide runner on the built-in simulator: automatic entry point, literal snapshot loading, 1,024 returned shots, one submission and console JSON export. Eleven additional Python regression checks cover that runtime contract (`python3 scripts/test-qollab.py` from the repository root in an environment with Qiskit installed).
 
 For your live beliefs, choose **Export my frozen Qollab snapshot** in Quantum lab and replace the teaching `snapshot.json`. New swipes never change an uploaded snapshot or launch remote jobs.
 

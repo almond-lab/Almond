@@ -1,7 +1,10 @@
+# NOTE: 'backend' is pre-created as a global variable by Qollab.
+
 """Frozen, one-off Qollab evaluation of QSwipe's joint portfolio circuit.
 
-Qollab supplies a pre-created Qiskit-compatible ``backend``. Upload the
-exported snapshot.json beside this file and press Run once. This file has
+Qollab supplies a pre-created Qiskit-compatible ``backend``. Paste this whole
+file and press Run. Optionally upload snapshot.json to override the embedded
+synthetic teaching snapshot with a frozen website export. This file has
 exactly one backend.run call: no training loop, API credentials, or direct
 provider/network requests. A provider simulator is not a hardware result.
 """
@@ -13,6 +16,7 @@ import random
 from pathlib import Path
 
 from qiskit import QuantumCircuit, transpile
+from qiskit.providers.jobstatus import JobStatus
 
 COINS = ("BTC", "xyz:SP500", "xyz:BRENTOIL", "xyz:GOLD")
 EPS = 1e-10
@@ -323,34 +327,12 @@ def random_baselines(snapshot, objective, exact, shots, seed=731):
     return outcomes
 
 
-def evaluate_portfolio(provided_backend, artifact=None, output_name="qollab_result.json", execution_mode="qollab-provided-backend", requested_shots=None):
-    if provided_backend is None:
-        raise RuntimeError("Qollab must supply the pre-created Qiskit backend named 'backend'; this file does not create or authenticate one")
-    if artifact is None:
-        # Qollab discovers data files from literal paths relative to the project
-        # root. Keep this literal in the source; do not construct it dynamically.
-        path = Path("snapshot.json")
-        if not path.is_file():
-            raise FileNotFoundError("Upload the frozen QSwipe export as snapshot.json beside main.py before pressing Run")
-        artifact = json.loads(path.read_text(encoding="utf-8"))
-    snapshot, objective, shots = validate_artifact(artifact)
-    if requested_shots is not None:
-        if isinstance(requested_shots, bool) or not isinstance(requested_shots, int) or not 1 <= requested_shots <= 4096:
-            raise ValueError("Shots must be an integer from 1 to 4096")
-        shots = requested_shots
-    circuit = construct_circuit(artifact)
+def report_portfolio(artifact, circuit, counts, shots, compile_seconds=0.0, observed_seconds=0.0,
+                     output_name="qollab_result.json", execution_mode="qollab-provided-backend"):
+    snapshot, objective, _ = validate_artifact(artifact)
     classical_started = time.perf_counter()
     exact = classical_reference(snapshot)
     reference_seconds = time.perf_counter() - classical_started
-    compile_started = time.perf_counter()
-    compiled = transpile(circuit, provided_backend, optimization_level=0)
-    compile_seconds = time.perf_counter() - compile_started
-    observed_started = time.perf_counter()
-    # EXACTLY ONE submission. No retuning, retry, second run, or remote API call.
-    job = provided_backend.run(compiled, shots=shots)
-    result = job.result()
-    observed_seconds = time.perf_counter() - observed_started
-    counts = normalized_counts(result.get_counts(0))
     outcome = evaluate_counts(snapshot, objective, counts, exact)
     held = evaluate_held(snapshot)
     improvement = held["cost"]-outcome["selected"]["cost"] if outcome["selected"] else None
@@ -367,7 +349,8 @@ def evaluate_portfolio(provided_backend, artifact=None, output_name="qollab_resu
                     "observedSubmissionAndResultSeconds": observed_seconds,
                     "classicalReferenceSeconds": reference_seconds},
               "resources": {"qubits": 8, "submittedGateCountExcludingMeasurement": len(artifact["circuit"]["circuit"]),
-                            "compiledDepth": compiled.depth(), "backendSubmissions": 1},
+                            "submittedDepth": circuit.depth(),
+                            "compilationApplied": compile_seconds > 0, "backendSubmissions": 1},
               **outcome, "holdComparison": hold_comparison, "randomBaselines": baselines,
               "methodology": "Frozen modeled objective; backend-produced samples. Backend may be a simulator or hardware. No quantum speedup or trading-performance claim."}
     print(f"QSWIPE / FROZEN QOLLAB RUN · snapshot {snapshot['id']} · v{snapshot['version']}")
@@ -405,9 +388,92 @@ def evaluate_portfolio(provided_backend, artifact=None, output_name="qollab_resu
     return report
 
 
-def main(shots: int = 1024):
-    """Qollab automatically calls this after loading the script. Do not call it twice."""
-    return evaluate_portfolio(globals().get("backend"), requested_shots=shots)
+# A self-contained teaching example makes pasting just this file runnable.
+# An uploaded snapshot.json overrides it; these embedded inputs are synthetic.
+TEACHING_ARTIFACT_JSON = r'''{"schema":"almond.joint-portfolio.snapshot.v1","project":"QSwipe","mode":"synthetic-teaching-example","historical":false,"snapshot":{"id":"qswipe-synthetic-doc-after-btc","version":1,"createdAt":1791676800000,"synthetic":true,"dataSource":"Hypothetical teaching inputs from attached Preference Aware Portfolio Cost and Quantum Circuit document; prices are illustrative, not exchange quotes","convictions":[0.8228060541124633,0.8,-0.72,0.67],"prices":[70000,6000,80,3000],"equity":10000,"holdings":[0,0,0,0],"covariance":[[0.0016,0.00018771359999999998,0.00022063,1.455e-05],[0.0001877136,0.000144,9.254100000000002e-05,3.58416e-05],[0.00022063,9.254100000000001e-05,0.0006250000000000001,4.21275e-05],[1.455e-05,3.58416e-05,4.21275e-05,0.000225]],"covarianceLabel":"Synthetic DOCX covariance: daily volatility [4%,1.2%,2.5%,1.5%] with stated teaching correlations","fundingRates":[4.166666666666667e-06,2.0833333333333334e-06,-3.3333333333333337e-06,1.25e-06],"executionRates":[{"feeRate":0.0005,"spreadBps":0,"slippageBps":0,"allIn":true},{"feeRate":0.0003,"spreadBps":0,"slippageBps":0,"allIn":true},{"feeRate":0.0005,"spreadBps":0,"slippageBps":0,"allIn":true},{"feeRate":0.0004,"spreadBps":0,"slippageBps":0,"allIn":true}],"settings":{"slot":0.2,"grossLimit":0.8,"horizonHours":24,"decayHalfLifeHours":24,"evidenceWeight":0.5,"thesisCap":1,"localShots":1024,"layers":2,"evaluationBudget":48,"beliefWeight":1,"riskWeight":0.15,"turnoverWeight":0.5,"fundingWeight":1,"riskNormalization":0.0004,"moneyNormalization":0.001,"invalidPenalty":0.5,"minimumImprovement":0.0001,"feeRate":0.0005,"spreadBps":2,"slippageBps":1}},"result":{"angles":[0.71,0.33,1.12,0.52],"note":"Unoptimized illustrative DOCX angles, not a successful optimization or hardware run"},"bitOrder":"q0 leftmost; each pair long,short in BTC/SP500/Brent/Gold order","objective":{"linear":[-0.06740302705623166,0.7154030270562317,-0.10784000000000003,0.6721600000000001,0.653375,-0.03462499999999999,-0.03562500000000002,0.622375],"pairs":[{"i":0,"j":1,"coefficient":-0.14800000000000013},{"i":0,"j":2,"coefficient":0.005631407999999999},{"i":0,"j":3,"coefficient":-0.005631407999999999},{"i":0,"j":4,"coefficient":0.0066189},{"i":0,"j":5,"coefficient":-0.0066189},{"i":0,"j":6,"coefficient":0.00043649999999999993},{"i":0,"j":7,"coefficient":-0.00043649999999999993},{"i":1,"j":2,"coefficient":-0.005631407999999999},{"i":1,"j":3,"coefficient":0.005631407999999999},{"i":1,"j":4,"coefficient":-0.0066189},{"i":1,"j":5,"coefficient":0.0066189},{"i":1,"j":6,"coefficient":-0.00043649999999999993},{"i":1,"j":7,"coefficient":0.00043649999999999993},{"i":2,"j":3,"coefficient":-0.06432000000000004},{"i":2,"j":4,"coefficient":0.00277623},{"i":2,"j":5,"coefficient":-0.00277623},{"i":2,"j":6,"coefficient":0.0010752479999999998},{"i":2,"j":7,"coefficient":-0.0010752479999999998},{"i":3,"j":4,"coefficient":-0.00277623},{"i":3,"j":5,"coefficient":0.00277623},{"i":3,"j":6,"coefficient":-0.0010752479999999998},{"i":3,"j":7,"coefficient":0.0010752479999999998},{"i":4,"j":5,"coefficient":-0.11875000000000013},{"i":4,"j":6,"coefficient":0.0012638249999999999},{"i":4,"j":7,"coefficient":-0.0012638249999999999},{"i":5,"j":6,"coefficient":-0.0012638249999999999},{"i":5,"j":7,"coefficient":0.0012638249999999999},{"i":6,"j":7,"coefficient":-0.0867500000000001}],"offset":0.5710774506710306,"invalidPenalty":0.5},"circuit":{"format":"ionq.circuit.v0","qubits":8,"gateset":"qis","circuit":[{"gate":"h","target":0},{"gate":"h","target":1},{"gate":"h","target":2},{"gate":"h","target":3},{"gate":"h","target":4},{"gate":"h","target":5},{"gate":"h","target":6},{"gate":"h","target":7},{"gate":"rz","target":0,"rotation":0.10039614920992453},{"gate":"rz","target":1,"rotation":-0.45539614920992444},{"gate":"rz","target":2,"rotation":0.09940000000000004},{"gate":"rz","target":3,"rotation":-0.4544000000000001},{"gate":"rz","target":4,"rotation":-0.42173999999999995},{"gate":"rz","target":5,"rotation":0.06674000000000004},{"gate":"rz","target":6,"rotation":0.05609000000000005},{"gate":"rz","target":7,"rotation":-0.41108999999999996},{"gate":"cnot","control":0,"target":1},{"gate":"rz","target":1,"rotation":-0.052540000000000045},{"gate":"cnot","control":0,"target":1},{"gate":"cnot","control":0,"target":2},{"gate":"rz","target":2,"rotation":0.0019991498399999997},{"gate":"cnot","control":0,"target":2},{"gate":"cnot","control":0,"target":3},{"gate":"rz","target":3,"rotation":-0.0019991498399999997},{"gate":"cnot","control":0,"target":3},{"gate":"cnot","control":0,"target":4},{"gate":"rz","target":4,"rotation":0.0023497095},{"gate":"cnot","control":0,"target":4},{"gate":"cnot","control":0,"target":5},{"gate":"rz","target":5,"rotation":-0.0023497095},{"gate":"cnot","control":0,"target":5},{"gate":"cnot","control":0,"target":6},{"gate":"rz","target":6,"rotation":0.00015495749999999995},{"gate":"cnot","control":0,"target":6},{"gate":"cnot","control":0,"target":7},{"gate":"rz","target":7,"rotation":-0.00015495749999999995},{"gate":"cnot","control":0,"target":7},{"gate":"cnot","control":1,"target":2},{"gate":"rz","target":2,"rotation":-0.0019991498399999997},{"gate":"cnot","control":1,"target":2},{"gate":"cnot","control":1,"target":3},{"gate":"rz","target":3,"rotation":0.0019991498399999997},{"gate":"cnot","control":1,"target":3},{"gate":"cnot","control":1,"target":4},{"gate":"rz","target":4,"rotation":-0.0023497095},{"gate":"cnot","control":1,"target":4},{"gate":"cnot","control":1,"target":5},{"gate":"rz","target":5,"rotation":0.0023497095},{"gate":"cnot","control":1,"target":5},{"gate":"cnot","control":1,"target":6},{"gate":"rz","target":6,"rotation":-0.00015495749999999995},{"gate":"cnot","control":1,"target":6},{"gate":"cnot","control":1,"target":7},{"gate":"rz","target":7,"rotation":0.00015495749999999995},{"gate":"cnot","control":1,"target":7},{"gate":"cnot","control":2,"target":3},{"gate":"rz","target":3,"rotation":-0.022833600000000013},{"gate":"cnot","control":2,"target":3},{"gate":"cnot","control":2,"target":4},{"gate":"rz","target":4,"rotation":0.00098556165},{"gate":"cnot","control":2,"target":4},{"gate":"cnot","control":2,"target":5},{"gate":"rz","target":5,"rotation":-0.00098556165},{"gate":"cnot","control":2,"target":5},{"gate":"cnot","control":2,"target":6},{"gate":"rz","target":6,"rotation":0.0003817130399999999},{"gate":"cnot","control":2,"target":6},{"gate":"cnot","control":2,"target":7},{"gate":"rz","target":7,"rotation":-0.0003817130399999999},{"gate":"cnot","control":2,"target":7},{"gate":"cnot","control":3,"target":4},{"gate":"rz","target":4,"rotation":-0.00098556165},{"gate":"cnot","control":3,"target":4},{"gate":"cnot","control":3,"target":5},{"gate":"rz","target":5,"rotation":0.00098556165},{"gate":"cnot","control":3,"target":5},{"gate":"cnot","control":3,"target":6},{"gate":"rz","target":6,"rotation":-0.0003817130399999999},{"gate":"cnot","control":3,"target":6},{"gate":"cnot","control":3,"target":7},{"gate":"rz","target":7,"rotation":0.0003817130399999999},{"gate":"cnot","control":3,"target":7},{"gate":"cnot","control":4,"target":5},{"gate":"rz","target":5,"rotation":-0.04215625000000005},{"gate":"cnot","control":4,"target":5},{"gate":"cnot","control":4,"target":6},{"gate":"rz","target":6,"rotation":0.00044865787499999996},{"gate":"cnot","control":4,"target":6},{"gate":"cnot","control":4,"target":7},{"gate":"rz","target":7,"rotation":-0.00044865787499999996},{"gate":"cnot","control":4,"target":7},{"gate":"cnot","control":5,"target":6},{"gate":"rz","target":6,"rotation":-0.00044865787499999996},{"gate":"cnot","control":5,"target":6},{"gate":"cnot","control":5,"target":7},{"gate":"rz","target":7,"rotation":0.00044865787499999996},{"gate":"cnot","control":5,"target":7},{"gate":"cnot","control":6,"target":7},{"gate":"rz","target":7,"rotation":-0.030796250000000035},{"gate":"cnot","control":6,"target":7},{"gate":"rx","target":0,"rotation":0.66},{"gate":"rx","target":1,"rotation":0.66},{"gate":"rx","target":2,"rotation":0.66},{"gate":"rx","target":3,"rotation":0.66},{"gate":"rx","target":4,"rotation":0.66},{"gate":"rx","target":5,"rotation":0.66},{"gate":"rx","target":6,"rotation":0.66},{"gate":"rx","target":7,"rotation":0.66},{"gate":"rz","target":0,"rotation":0.15837139030297956},{"gate":"rz","target":1,"rotation":-0.7183713903029795},{"gate":"rz","target":2,"rotation":0.15680000000000008},{"gate":"rz","target":3,"rotation":-0.7168000000000002},{"gate":"rz","target":4,"rotation":-0.66528},{"gate":"rz","target":5,"rotation":0.10528000000000007},{"gate":"rz","target":6,"rotation":0.08848000000000009},{"gate":"rz","target":7,"rotation":-0.6484800000000001},{"gate":"cnot","control":0,"target":1},{"gate":"rz","target":1,"rotation":-0.08288000000000008},{"gate":"cnot","control":0,"target":1},{"gate":"cnot","control":0,"target":2},{"gate":"rz","target":2,"rotation":0.00315358848},{"gate":"cnot","control":0,"target":2},{"gate":"cnot","control":0,"target":3},{"gate":"rz","target":3,"rotation":-0.00315358848},{"gate":"cnot","control":0,"target":3},{"gate":"cnot","control":0,"target":4},{"gate":"rz","target":4,"rotation":0.003706584},{"gate":"cnot","control":0,"target":4},{"gate":"cnot","control":0,"target":5},{"gate":"rz","target":5,"rotation":-0.003706584},{"gate":"cnot","control":0,"target":5},{"gate":"cnot","control":0,"target":6},{"gate":"rz","target":6,"rotation":0.00024444},{"gate":"cnot","control":0,"target":6},{"gate":"cnot","control":0,"target":7},{"gate":"rz","target":7,"rotation":-0.00024444},{"gate":"cnot","control":0,"target":7},{"gate":"cnot","control":1,"target":2},{"gate":"rz","target":2,"rotation":-0.00315358848},{"gate":"cnot","control":1,"target":2},{"gate":"cnot","control":1,"target":3},{"gate":"rz","target":3,"rotation":0.00315358848},{"gate":"cnot","control":1,"target":3},{"gate":"cnot","control":1,"target":4},{"gate":"rz","target":4,"rotation":-0.003706584},{"gate":"cnot","control":1,"target":4},{"gate":"cnot","control":1,"target":5},{"gate":"rz","target":5,"rotation":0.003706584},{"gate":"cnot","control":1,"target":5},{"gate":"cnot","control":1,"target":6},{"gate":"rz","target":6,"rotation":-0.00024444},{"gate":"cnot","control":1,"target":6},{"gate":"cnot","control":1,"target":7},{"gate":"rz","target":7,"rotation":0.00024444},{"gate":"cnot","control":1,"target":7},{"gate":"cnot","control":2,"target":3},{"gate":"rz","target":3,"rotation":-0.03601920000000003},{"gate":"cnot","control":2,"target":3},{"gate":"cnot","control":2,"target":4},{"gate":"rz","target":4,"rotation":0.0015546888000000003},{"gate":"cnot","control":2,"target":4},{"gate":"cnot","control":2,"target":5},{"gate":"rz","target":5,"rotation":-0.0015546888000000003},{"gate":"cnot","control":2,"target":5},{"gate":"cnot","control":2,"target":6},{"gate":"rz","target":6,"rotation":0.00060213888},{"gate":"cnot","control":2,"target":6},{"gate":"cnot","control":2,"target":7},{"gate":"rz","target":7,"rotation":-0.00060213888},{"gate":"cnot","control":2,"target":7},{"gate":"cnot","control":3,"target":4},{"gate":"rz","target":4,"rotation":-0.0015546888000000003},{"gate":"cnot","control":3,"target":4},{"gate":"cnot","control":3,"target":5},{"gate":"rz","target":5,"rotation":0.0015546888000000003},{"gate":"cnot","control":3,"target":5},{"gate":"cnot","control":3,"target":6},{"gate":"rz","target":6,"rotation":-0.00060213888},{"gate":"cnot","control":3,"target":6},{"gate":"cnot","control":3,"target":7},{"gate":"rz","target":7,"rotation":0.00060213888},{"gate":"cnot","control":3,"target":7},{"gate":"cnot","control":4,"target":5},{"gate":"rz","target":5,"rotation":-0.06650000000000009},{"gate":"cnot","control":4,"target":5},{"gate":"cnot","control":4,"target":6},{"gate":"rz","target":6,"rotation":0.000707742},{"gate":"cnot","control":4,"target":6},{"gate":"cnot","control":4,"target":7},{"gate":"rz","target":7,"rotation":-0.000707742},{"gate":"cnot","control":4,"target":7},{"gate":"cnot","control":5,"target":6},{"gate":"rz","target":6,"rotation":-0.000707742},{"gate":"cnot","control":5,"target":6},{"gate":"cnot","control":5,"target":7},{"gate":"rz","target":7,"rotation":0.000707742},{"gate":"cnot","control":5,"target":7},{"gate":"cnot","control":6,"target":7},{"gate":"rz","target":7,"rotation":-0.04858000000000006},{"gate":"cnot","control":6,"target":7},{"gate":"rx","target":0,"rotation":1.04},{"gate":"rx","target":1,"rotation":1.04},{"gate":"rx","target":2,"rotation":1.04},{"gate":"rx","target":3,"rotation":1.04},{"gate":"rx","target":4,"rotation":1.04},{"gate":"rx","target":5,"rotation":1.04},{"gate":"rx","target":6,"rotation":1.04},{"gate":"rx","target":7,"rotation":1.04}]},"note":"Entirely synthetic teaching data; no browser export or credentials needed for the local demo. Schema prefix preserved for compatibility."}'''
 
-# No main() call here: Qollab calls the typed entry point itself, once.
-# For a desktop run, use local_demo.py (Qiskit's built-in BasicSimulator).
+# NOTE: 'backend' is pre-created as a global variable by Qollab.
+# Prepare and display the circuit at the top level, as in Qollab's examples.
+if Path("snapshot.json").is_file():
+    artifact = json.loads(Path("snapshot.json").read_text(encoding="utf-8"))
+    print("Using uploaded frozen snapshot.json")
+else:
+    artifact = json.loads(TEACHING_ARTIFACT_JSON)
+    print("Using embedded synthetic teaching snapshot; no extra file is required")
+validate_artifact(artifact)
+circuit = construct_circuit(artifact)
+print(circuit)
+
+
+def main(shots: int = 1024, excludeLowProbabilityValues: bool = False, lowProbabilityThreshold: float = 0.05, compileForBackend: bool = False):
+    # Qollab calls this automatically. Never add main() at the bottom.
+    if isinstance(shots, bool) or not isinstance(shots, int) or not 1 <= shots <= 4096:
+        raise ValueError("Shots must be an integer from 1 to 4096")
+    if not math.isfinite(lowProbabilityThreshold) or not 0 <= lowProbabilityThreshold <= 1:
+        raise ValueError("Low probability threshold must be between 0 and 1")
+    if "backend" not in globals() or backend is None:
+        print("Qollab must supply the pre-created backend; select a backend in the Run dialog")
+        return
+
+    submitted = circuit
+    compile_seconds = 0.0
+    if compileForBackend:
+        # Needed for IBM noise-model backends; standard gates can be submitted
+        # directly to Qollab's built-in simulator and IonQ, matching the examples.
+        started = time.perf_counter()
+        try:
+            submitted = transpile(circuit, backend, optimization_level=0)
+        except Exception as error:
+            print(f"Circuit compilation failed: {error}")
+            return
+        compile_seconds = time.perf_counter() - started
+
+    started = time.perf_counter()
+    try:
+        # Exactly one submission. No retry or replacement backend.
+        job = backend.run(submitted, shots=shots)
+    except AttributeError as error:
+        print(f"Provider SDK AttributeError during submission: {error}")
+        print("Check Qollab's backend status and error output; no job is retried.")
+        return
+    except Exception as error:
+        print(f"Job submission failed: {error}")
+        return
+
+    try:
+        # Same status-polling pattern as the supplied Qollab example, with
+        # explicit terminal failure handling so a failed job does not hang.
+        while True:
+            status = job.status()
+            print(f"Job status is {status}")
+            name = getattr(status, "name", str(status)).upper().split(".")[-1]
+            if status == JobStatus.DONE or name == "DONE":
+                break
+            if status in (JobStatus.ERROR, JobStatus.CANCELLED) or name in ("ERROR", "FAILED", "CANCELLED", "CANCELED"):
+                print("Job ended without a result. No portfolio is proposed and no retry is submitted.")
+                return
+            time.sleep(10)
+
+        # Some Qollab examples expose counts on the job. Standard Qiskit jobs
+        # expose them on job.result(); support both without submitting again.
+        if callable(getattr(job, "get_counts", None)):
+            returned_counts = job.get_counts()
+        else:
+            returned_counts = job.result().get_counts()
+        counts = normalized_counts(returned_counts)
+    except Exception as error:
+        print(f"Job status/result retrieval failed: {error}")
+        return
+
+    report = report_portfolio(artifact, submitted, counts, shots, compile_seconds,
+                              time.perf_counter() - started)
+    # Filtering affects the printed preview only. Every returned shot remains
+    # in the scientific comparison, including rare low-cost portfolios.
+    preview = {format(state, "08b"): count for state, count in counts.items()}
+    if excludeLowProbabilityValues:
+        cutoff = sum(counts.values()) * lowProbabilityThreshold
+        preview = {bits: count for bits, count in preview.items() if count > cutoff}
+    print(f"Counts preview (Qiskit q7..q0 order): {preview}")
+    return report
+
+# Qollab invokes main() automatically. There is intentionally no call here.

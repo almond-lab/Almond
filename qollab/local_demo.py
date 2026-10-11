@@ -9,6 +9,7 @@ import json
 import time
 from pathlib import Path
 
+from qiskit import transpile
 import numpy as np
 from qiskit.providers.basic_provider import BasicSimulator
 import main as runner
@@ -76,8 +77,17 @@ def cli():
         print(f"CPU training: {training['evaluations']} evaluations; mean {training['initialExpectedCost']:.9f} -> {training['expectedCost']:.9f}")
         # Pass the retuned frozen artifact explicitly; do not overwrite the
         # included teaching snapshot or perform another backend submission.
-    runner.evaluate_portfolio(BasicSimulator(seed_simulator=args.seed), artifact=artifact,
-                output_name="local_demo_result.json", execution_mode="local-basic-simulator")
+    device = BasicSimulator(seed_simulator=args.seed)
+    circuit = runner.construct_circuit(artifact)
+    started = time.perf_counter()
+    compiled = transpile(circuit, device, optimization_level=0)
+    compile_seconds = time.perf_counter() - started
+    started = time.perf_counter()
+    shots = artifact["snapshot"]["settings"]["localShots"]
+    counts = runner.normalized_counts(device.run(compiled, shots=shots).result().get_counts())
+    runner.report_portfolio(artifact, compiled, counts, shots, compile_seconds,
+                            time.perf_counter() - started, output_name="local_demo_result.json",
+                            execution_mode="local-basic-simulator")
 
 
 if __name__ == "__main__":

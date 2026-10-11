@@ -15,6 +15,7 @@ import unittest
 from unittest.mock import patch
 
 from qiskit.providers.basic_provider import BasicSimulator
+from qiskit.providers.jobstatus import JobStatus
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / "qollab/main.py").read_text()
@@ -56,7 +57,11 @@ class RuntimeContract(unittest.TestCase):
 
     def test_script_load_submits_nothing(self):
         self.assertEqual(self.device.calls, [])
-        self.assertEqual(self.namespace["main"].__annotations__, {"shots": int})
+        self.assertEqual(self.namespace["main"].__annotations__, {
+            "shots": int, "excludeLowProbabilityValues": bool,
+            "lowProbabilityThreshold": float, "compileForBackend": bool})
+        self.assertIn("circuit", self.namespace)
+        self.assertEqual(self.namespace["circuit"].num_qubits, 8)
 
     def test_auto_main_submits_once_and_exports_console_report(self):
         downloads = []
@@ -83,8 +88,9 @@ class RuntimeContract(unittest.TestCase):
 
     def test_selected_backend_failure_never_falls_back_or_retries(self):
         self.device.fail = True
-        with self.assertRaisesRegex(RuntimeError, "selected backend failed"):
-            self.namespace["main"]()
+        with contextlib.redirect_stdout(self.out):
+            self.assertIsNone(self.namespace["main"]())
+        self.assertIn("Job submission failed: selected backend failed", self.out.getvalue())
         self.assertEqual(len(self.device.calls), 1)
         self.assertFalse(Path("qollab_result.json").exists())
 
@@ -96,9 +102,48 @@ class RuntimeContract(unittest.TestCase):
 
     def test_missing_injected_backend_does_not_create_one(self):
         del self.namespace["backend"]
-        with self.assertRaisesRegex(RuntimeError, "pre-created"):
-            self.namespace["main"]()
+        with contextlib.redirect_stdout(self.out):
+            self.assertIsNone(self.namespace["main"]())
+        self.assertIn("pre-created backend", self.out.getvalue())
         self.assertEqual(self.device.calls, [])
+
+    def test_pasting_only_main_py_uses_embedded_teaching_snapshot(self):
+        Path("snapshot.json").unlink()
+        namespace = {"__name__": "__main__", "backend": self.device}
+        with contextlib.redirect_stdout(self.out):
+            exec(compile(SOURCE, "main.py", "exec"), namespace)
+            report = namespace["main"](128)
+        self.assertTrue(report["syntheticInputs"])
+        self.assertEqual(report["metrics"]["returnedShots"], 128)
+        self.assertEqual(self.device.calls, [{"shots": 128}])
+
+    def test_job_counts_api_and_preview_filter_preserve_rare_optimal_sample(self):
+        class Job:
+            def status(self):
+                return JobStatus.DONE
+
+            def get_counts(self):
+                return {"01100101": 1, "00000000": 99}
+
+            def result(self):
+                raise AssertionError("Job get_counts() should be used when present")
+
+        with patch.object(self.device, "run", return_value=Job()) as submit, contextlib.redirect_stdout(self.out):
+            report = self.namespace["main"](100, True, .05)
+        self.assertEqual(submit.call_count, 1)
+        self.assertEqual(report["metrics"]["returnedShots"], 100)
+        self.assertEqual(report["selected"]["count"], 1)
+        self.assertLess(report["gap"], 1e-9)
+        self.assertIn("Counts preview (Qiskit q7..q0 order): {'00000000': 99}", self.out.getvalue())
+
+    def test_error_and_cancelled_statuses_stop_without_result_or_retry(self):
+        for status in (JobStatus.ERROR, JobStatus.CANCELLED, "FAILED"):
+            job = types.SimpleNamespace(status=lambda: status,
+                                        result=lambda: self.fail("No result should be fetched"))
+            with patch.object(self.device, "run", return_value=job) as submit, contextlib.redirect_stdout(self.out):
+                self.assertIsNone(self.namespace["main"]())
+            self.assertEqual(submit.call_count, 1)
+        self.assertFalse(Path("qollab_result.json").exists())
 
     def test_snapshot_path_can_be_discovered_by_qollab(self):
         strings = {node.value for node in ast.walk(ast.parse(SOURCE))

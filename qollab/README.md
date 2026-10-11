@@ -4,17 +4,19 @@ This starter follows Qollab's browser runtime and uses the **pre-created `backen
 
 ## Run on Qollab
 
-1. Create a **Python / Qiskit** project, or choose **Upload your own files** and unpack the starter ZIP.
-2. Keep `main.py`, `snapshot.json` and `requirements.txt` at the project root. Do not upload the whole website repository: its `index.html` and `main.js` would select a different runtime.
+1. Create a **Python / Qiskit** project. Paste the complete `main.py` into its code editor; the embedded synthetic teaching snapshot makes this single file runnable. Alternatively, upload and unpack the starter ZIP.
+2. Keep `main.py` at the project root. `snapshot.json` is optional: upload it to override the embedded example with your own frozen export. Do not upload the whole website repository: its `index.html` and `main.js` would select a different runtime.
 3. Replace the old `requirements.txt` with the one in this starter. It contains only `qiskit>=2.5.2,<3.0.0`. Remove any old `qiskit-aer` / `qiskit_aer` line. Leave optional libraries off.
-4. Press **Run**, select **Qiskit BasicSimulator / built-in simulator**, and leave **Shots** at 1024 for your first test.
+4. Press **Run**, select **Built-in simulator**, and leave **Shots** at 1024. Keep **Compile For Backend** off for this simulator or IonQ; turn it on for an IBM noise-model simulator.
 5. Read the joint sampled portfolio, exact reference, cost gap, validity, cap feasibility and Hold comparison in the console. The console also receives `qollab_result.json` through Qollab's `sendFile` API.
 
-Qollab executes `main.py` top to bottom, then automatically calls `def main(shots: int = 1024)`. Do **not** add a `main()` call at the bottom: that would submit twice. The runner passes the injected `backend` to `evaluate_portfolio()`, compiles at optimization level 0, and makes **one** `backend.run()` call. It does not instantiate a backend or silently switch to simulation if your selected backend fails.
+The script constructs and prints a global `circuit` before the run, matching the supplied Qollab example. Qollab then automatically calls the typed `main(shots, excludeLowProbabilityValues, lowProbabilityThreshold, compileForBackend)` function. Do **not** add a bottom-of-file `main()` call: that would submit twice. `main()` calls the injected `backend.run()` directly, once, polls `JobStatus`, and stops on DONE, ERROR or CANCELLED. It uses `job.get_counts()` when available, otherwise standard Qiskit `job.result().get_counts()`. It does not create a backend, retry or silently switch to simulation. Optional compilation uses optimization level 0.
 
-The literal `"snapshot.json"` in the code lets Qollab discover and load the data file. Uploaded Python files can import each other normally. Files written during a run are temporary; `sendFile` exposes the report in the console rather than relying on persistent disk storage.
+The literal `"snapshot.json"` in the code lets Qollab discover and load an uploaded data file. If absent, the labelled synthetic teaching artifact embedded in `main.py` is used. Uploaded Python files can import each other normally. Files written during a run are temporary; `sendFile` exposes the report in the console rather than relying on persistent disk storage.
 
-Verified on 11 October 2026 in Qollab's actual browser/Pyodide runtime with these files supplied locally to the browser: the built-in simulator returned 1,024 shots and the console received the JSON report. No public project was changed or IonQ job submitted. The teaching angles are untrained, so a poor sampled proposal can correctly fail the Hold comparison. Remote hardware execution remains unverified.
+Verified on 11 October 2026 in Qollab's actual browser/Pyodide runtime with the corrected source supplied locally to the browser: both uploaded-snapshot and standalone-paste paths work. The standalone run used the embedded snapshot, reached `JobStatus.DONE`, returned 1,024 shots and exposed the JSON report in the console. No public project was changed or IonQ job submitted. The teaching angles are untrained, so a poor sampled proposal can correctly fail the Hold comparison. Remote hardware execution remains unverified.
+
+**Exclude Low Probability Values** defaults to off. If enabled, it filters only the printed counts preview. All returned shots, including rare low-cost portfolios, are retained in the scientific report and candidate selection.
 
 For your own frozen website experiment, export the QSwipe snapshot, rename it `snapshot.json`, and replace the teaching file. New website swipes never modify that uploaded snapshot or submit a Qollab job. The backend selected in Qollab determines whether the one-off run is local simulation, remote simulation, or hardware. The IonQ one-job-per-Run rule remains respected.
 
