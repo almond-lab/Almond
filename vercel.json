@@ -4,6 +4,9 @@
   "buildCommand": "npm run build",
   "installCommand": "",
   "outputDirectory": "dist",
+  "functions": {
+    "api/quantum.mjs": { "maxDuration": 60 }
+  },
   "headers": [
     {
       "source": "/(.*)",

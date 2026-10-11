@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a0a0c">
+  <meta name="description" content="Almond's protected circuit runner connects quantum circuit experiments to an IonQ execution provider, with transparent job states and downloadable results.">
+  <title>Circuit Runner — Almond</title>
+  <link rel="icon" href="assets/almond-logo.png">
+  <link rel="stylesheet" href="quantum.css">
+  <script src="quantum.js" type="module"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to the circuit runner</a>
+  <header class="site-header shell"><a class="brand" href="/" aria-label="Almond home"><img src="assets/almond-logo.png" alt="Almond" width="158" height="35"></a><nav aria-label="Main navigation"><a href="/#benchmark">Benchmark explorer</a><a href="/markets.html">Live trading lab</a><a href="/quantum.html" aria-current="page">Circuit runner</a></nav><span class="header-tag">PROTECTED EXECUTION</span></header>
+  <main id="main">
+    <section class="runner-hero shell" aria-labelledby="runner-title"><div><p class="eyebrow">ALMOND / QUANTUM WORKSPACE</p><h1 id="runner-title">From a circuit<br>to an observable result.</h1></div><div class="hero-context"><p>Submit a circuit. Follow the job. Inspect the returned evidence.</p><span>Qollab for authoring and reproducibility.<br>IonQ through a protected execution connector.</span></div></section>
+    <div class="runner-shell shell">
+      <section class="execution-connection" aria-label="Execution connection"><div class="connection-heading"><span id="execution-status" class="execution-status" role="status" data-state="setup-required">Setup required</span><button id="check-execution" class="secondary-button" type="button">Check connection <span aria-hidden="true">↻</span></button></div><div class="connection-info"><p id="execution-note">Execution becomes available after the provider credentials and application access code are configured on the server.</p><span class="backend-label">EXECUTION CONNECTOR <strong id="backend-name">IonQ</strong></span></div></section>
+      <div class="workspace-grid">
+        <section class="circuit-panel panel" aria-labelledby="circuit-title"><div class="panel-heading"><div><p class="eyebrow">01 / DEFINE THE EXPERIMENT</p><h2 id="circuit-title">Your circuit.</h2></div><button id="load-bell" class="secondary-button" type="button">Load Bell starter</button></div>
+          <form id="circuit-form"><div class="form-intro"><span class="circuit-symbol" aria-hidden="true">|ψ⟩</span><p>The Bell starter is a two-qubit connectivity test. It checks the execution path; it is not a trading strategy or a speedup benchmark.</p></div>
+            <label for="execution-access">Execution access code</label><input id="execution-access" name="execution-access" type="password" autocomplete="off" aria-describedby="access-help" placeholder="Your application access code"><p id="access-help" class="field-help">The access code for this Almond app. This is not your IonQ API key; provider credentials stay on the server.</p>
+            <label for="circuit-name">Experiment name</label><input id="circuit-name" name="circuit-name" type="text" maxlength="80" value="Bell connection test" autocomplete="off">
+            <div class="editor-label"><label for="circuit-json">Circuit definition</label><span>IONQ QIS · JSON</span></div><textarea id="circuit-json" name="circuit-json" rows="12" spellcheck="false" wrap="off" aria-describedby="circuit-help">{
+  "qubits": 2,
+  "gateset": "qis",
+  "circuit": [
+    { "gate": "h", "target": 0 },
+    { "gate": "cnot", "control": 0, "target": 1 }
+  ]
+}</textarea><p id="circuit-help" class="field-help">An H gate prepares a superposition; CNOT entangles the two qubits. An ideal Bell experiment yields outcomes 00 and 11.</p>
+            <div class="run-parameters"><div><label for="run-shots">Shots</label><input id="run-shots" name="run-shots" type="number" min="1" max="4096" step="1" value="100" required><p class="field-help">1–4,096 requested shots; the ideal simulator returns probabilities.</p></div><div><label for="run-market">Observation context <span>optional</span></label><select id="run-market" name="run-market"><option value="">Independent circuit</option><option value="BTC">BTC / USDC</option><option value="xyz:SP500">S&amp;P 500 / USDC</option><option value="xyz:BRENTOIL">Brent Oil / USDC</option><option value="xyz:GOLD">Gold / USDC</option></select><p class="field-help">A context label; no order is submitted.</p></div></div>
+            <div class="run-actions"><button id="run-circuit" class="button button-primary" type="submit" disabled>Run circuit <span aria-hidden="true">↗</span></button><span>Simulator by default.<br>Target controlled by the server.</span></div><p id="run-message" class="run-message" role="status">Configure execution to submit your first circuit.</p>
+          </form>
+        </section>
+        <section class="result-panel panel" aria-labelledby="result-title"><div class="panel-heading"><div><p class="eyebrow">02 / OBSERVE THE EXECUTION</p><h2 id="result-title">The result trail.</h2></div><span id="job-status" class="job-status">No run yet</span></div><div class="result-body"><p id="job-circuit-summary" class="circuit-summary">Your submitted circuit and job details will appear here.</p><dl class="job-metadata"><div class="job-id-row"><dt>Provider job ID</dt><dd id="job-id">—</dd></div><div><dt>Submitted</dt><dd id="job-submitted">—</dd></div><div><dt>Observed elapsed</dt><dd id="job-elapsed">—</dd></div><div class="provider-time-row"><dt>Provider execution time <span>milliseconds</span></dt><dd id="job-provider-time">—</dd></div></dl><p class="timing-note">Observed elapsed includes the job lifecycle and browser polling. Provider execution time is reported separately when available. Neither is a trading decision latency or quantum speedup measurement.</p>
+            <div class="job-controls"><button id="resume-job" class="secondary-button" type="button">Resume updates <span aria-hidden="true">↻</span></button><button id="stop-polling" class="text-button" type="button">Pause updates</button></div><p class="field-help">Pausing stops updates in this browser; it does not cancel the provider job.</p>
+            <div class="result-label"><h3>Returned results</h3><span>PROVIDER RESPONSE</span></div><pre id="job-results" class="job-results" tabindex="0" aria-label="Circuit execution results">Waiting for a circuit execution.</pre><button id="download-job" class="download-button" type="button" disabled>Download job record <span aria-hidden="true">↓</span></button>
+          </div>
+        </section>
+      </div>
+      <section class="execution-flow" aria-labelledby="flow-title"><div class="flow-heading"><p class="eyebrow">ONE TRACEABLE EXECUTION PATH</p><h2 id="flow-title">A circuit. A job. A record.</h2></div><ol class="flow-steps"><li><span>01</span><h3>Vercel frontend</h3><p>Define the circuit and submit with your app access code.</p></li><li><span>02</span><h3>Protected server API</h3><p>Validate the request and keep provider credentials private.</p></li><li><span>03</span><h3>IonQ execution</h3><p>The configured provider runs the job and reports its status.</p></li><li><span>04</span><h3>Observable results</h3><p>Inspect the response and export the experiment record.</p></li></ol><p class="authoring-note">Use Qollab to author and reproduce your experiments, then bring an IonQ-compatible circuit definition here. This connector executes through IonQ; it does not submit to a Qollab execution API.</p></section>
+      <section class="operator-setup" aria-labelledby="setup-title"><details><summary><span><span class="eyebrow">FOR THE WORKSPACE OPERATOR</span><strong id="setup-title">Configure the execution connector</strong></span><span class="details-plus" aria-hidden="true">+</span></summary><div class="setup-content"><div><h3>Set two server-side values.</h3><p>In Vercel environment settings, configure <code>IONQ_API_KEY</code> for the provider and <code>ALMOND_EXECUTION_TOKEN</code> for this app's access code (at least 32 characters). Redeploy, then check the connection above.</p></div><div><h3>Choose the execution target.</h3><p>The server defaults to a simulator. A QPU target requires <code>IONQ_BACKEND</code> and <code>ALMOND_ALLOW_QPU=true</code>; the browser cannot switch to hardware. Actual provider results determine what appears in the result panel.</p></div></div></details><div class="reference-links"><a href="https://qollab.xyz/programs/hackathon" target="_blank" rel="noopener noreferrer">Qollab hackathon ↗</a><a href="https://docs.ionq.com/api-reference/v0.4/jobs/create-job" target="_blank" rel="noopener noreferrer">IonQ circuit API ↗</a><a href="/markets.html">Return to the read-only trading lab ↗</a></div></section>
+    </div>
+  </main>
+  <footer class="site-footer shell"><a class="brand" href="/" aria-label="Almond home"><img src="assets/almond-logo.png" alt="Almond" width="125" height="28" loading="lazy"></a><p>Independent research workspace · Observable execution</p><a href="https://github.com/almond-lab/Almond" target="_blank" rel="noopener noreferrer">Open source ↗</a></footer>
+</body>
+</html>

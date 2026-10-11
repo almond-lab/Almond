@@ -92,14 +92,74 @@ include disclosed fixed overhead and verification; they exclude readout, state
 preparation, networking, and other real hardware costs. Exports contain the model inputs
 and derived comparison; they are not evidence of empirical quantum advantage.
 
-Qollab circuit execution is a future integration: this template does not submit
-quantum jobs or require API credentials. It links to Qollab's hackathon page.
+The benchmark explorer remains an illustrative model. Measured provider runs
+are separate from the explorer and available through the circuit runner below.
 
 Methodology references:
 
 - [IonQ application benchmarking](https://www.ionq.com/quantum-benchmarks)
 - [IBM Quantum: Grover's algorithm](https://quantum.cloud.ibm.com/learning/en/courses/fundamentals-of-quantum-algorithms/grover-algorithm/introduction)
 
-Deploy to Vercel using the checked-in `vercel.json`. The site is static and runs
-without a backend. User-supplied font and logo assets are included for this
+Deploy to Vercel using the checked-in `vercel.json`. Static frontend assets and a protected Node execution function are deployed
+together. User-supplied font and logo assets are included for this
 project; no additional asset license is granted by this repository.
+
+
+## Live circuit execution
+
+Open `/quantum.html` to submit IonQ QIS circuits, follow job status, retrieve
+probability artifacts, and export the circuit, run ID, circuit hash, and timing.
+The Bell starter tests connectivity; it is not a trading strategy. Market context
+is metadata only and does not submit orders or change the live market feed.
+
+The path is browser → Vercel `/api/quantum` → IonQ v0.4 API. Qollab can remain
+where circuits are authored and reproduced. Its documented browser runtime is
+not an external job server; Qollab hackathon credits are not assumed to authorize
+this direct IonQ integration.
+
+Set these values in Vercel's server environment settings and redeploy:
+
+- `IONQ_API_KEY`: your provider API credential, never entered in the browser.
+- `ALMOND_EXECUTION_TOKEN`: an independently generated random access code of at
+  least 32 characters. Enter this app code in the runner to submit or resume jobs.
+- `IONQ_BACKEND`: defaults to `simulator`. The ideal simulator returns
+  probabilities and ignores requested shots; this is not quantum hardware.
+- `ALMOND_ALLOW_QPU`: defaults to `false`. Hardware requires `true` and an
+  authorized `qpu.forte-1` or `qpu.forte-enterprise-1` backend.
+
+For local execution, put the same values in an ignored `.env.local` file using
+`.env.example` as a guide. Node 24 is used for local development. No credentials
+are included in this repository. Missing configuration leaves execution disabled.
+
+This first integration supports 1–8 qubits, 1–256 gates and 1–4096 requested shots.
+Supported gates: `h`, `x`, `y`, `z`, `s`, `si`, `t`, `ti`, `rx`, `ry`, `rz`,
+`cnot`, and `swap`. Rotations use radians. Qiskit source is not executed on Vercel;
+provide a supported IonQ QIS JSON circuit. The server fixes the backend,
+validates all inputs, and protects job actions with the app code and origin checks.
+
+Accepted submissions return a signed receipt, valid for 24 hours, restricting
+status retrieval to that job. This tab saves the receipt and job in session
+storage; it does not save the access code. Exported JSON omits both. Keep the
+app code private: anyone with it can submit jobs within these limits. There is
+no automatic resubmission after an uncertain provider response. Check the IonQ
+dashboard first if submission could not be confirmed. Pausing browser updates
+does not cancel a provider job. Lost receipts and older jobs can be checked in
+IonQ directly.
+
+Job status polls every four seconds with bounded retries. Completed jobs retrieve
+`ionq.result.probabilities.json.v2` artifacts from IonQ and preserve the raw
+returned JSON. Browser-observed elapsed time includes network, queueing, and
+polling. Provider execution duration is shown separately when returned. Neither
+establishes quantum speedup or the latency of an entire trading strategy.
+
+Validation includes service tests for authentication, limits, signed receipts,
+provider requests/results, and sanitized errors. Browser tests exercise mocked
+job lifecycles separately from the live setup endpoint. No real provider job has
+been verified until account credentials are configured and a test run succeeds.
+
+Execution documentation:
+
+- [Qollab runtime environment](https://qollab.xyz/learn/docs/runtime-environment)
+- [IonQ v0.4 job submission](https://docs.ionq.com/api-reference/v0.4/jobs/create-job)
+- [IonQ job status](https://docs.ionq.com/api-reference/v0.4/jobs/get-job)
+- [IonQ result artifacts](https://docs.ionq.com/api-reference/v0.4/jobs/get-job-artifact)
