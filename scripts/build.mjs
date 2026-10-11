@@ -3,7 +3,7 @@ import { relative } from 'node:path';
 
 await rm('dist', { recursive: true, force: true });
 await mkdir('dist', { recursive: true });
-for (const path of ['index.html', 'styles.css', 'brand.css', 'app.js', 'markets.html', 'markets.css', 'markets.js', 'market-model.mjs', 'market-feed.mjs', 'quantum.html', 'quantum.css', 'quantum.js', 'signals.html', 'signals.css', 'signals.js', 'signal-model.mjs', 'qswipe.css', 'experience.css', 'project-guide.mjs', 'qswipe-ui.mjs', 'portfolio.css', 'portfolio-controller.mjs', 'portfolio-model.mjs', 'portfolio-market.mjs', 'paper-account.mjs', 'qaoa-worker.mjs', 'qollab', 'qollab-js', 'assets']) {
+for (const path of ['index.html', 'styles.css', 'brand.css', 'app.js', 'markets.html', 'markets.css', 'markets.js', 'market-model.mjs', 'market-feed.mjs', 'quantum.html', 'quantum.css', 'quantum.js', 'signals.html', 'signals.css', 'signals.js', 'signal-model.mjs', 'qswipe.css', 'experience.css', 'circuit-run.mjs', 'circuit-run.css', 'project-guide.mjs', 'qswipe-ui.mjs', 'portfolio.css', 'portfolio-controller.mjs', 'portfolio-model.mjs', 'portfolio-market.mjs', 'paper-account.mjs', 'qaoa-worker.mjs', 'qollab', 'qollab-js', 'assets']) {
   await cp(path, `dist/${path}`, { recursive: true, filter: source => {
     if (!['qollab', 'qollab-js'].includes(path)) return true;
     const file = relative(path, source);

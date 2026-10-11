@@ -1,3 +1,4 @@
+import { CircuitRun } from './circuit-run.mjs';
 import { COINS, DEFAULTS, conviction, makeSnapshot, buildObjective, evaluateChoices, evaluateHeld, financeMetrics, buildIonQCircuit } from './portfolio-model.mjs';
 import { PortfolioMarket } from './portfolio-market.mjs';
 import { newPaperAccount, restorePaperAccount, accountMetrics, planPaperRebalance } from './paper-account.mjs';
@@ -31,10 +32,11 @@ export class PortfolioController {
       }
     } catch { /* Start an isolated paper account if storage is unavailable. */ }
     this.mount();
+    this.circuitRun = new CircuitRun();
     this.market = new PortfolioMarket(() => { this.renderAccount(); this.updateAvailability(); this.tryAuto(); });
     this.worker = new Worker(new URL('./qaoa-worker.mjs', import.meta.url), { type: 'module' });
     this.worker.onmessage = e => this.receive(e.data);
-    this.worker.onerror = () => { this.running = false; this.status('Local simulation failed. Current paper positions are held.'); this.updateAvailability(); };
+    this.worker.onerror = () => { this.circuitRun.stop('Local simulation failed. Current paper positions are held.'); this.running = false; this.status('Local simulation failed. Current paper positions are held.'); this.updateAvailability(); };
     this.market.start();
     this.decayTimer = setInterval(() => this.renderConvictions(), 30_000);
     window.addEventListener('pagehide', () => { this.market.stop(); clearInterval(this.decayTimer); this.worker.terminate(); });
@@ -103,6 +105,7 @@ export class PortfolioController {
     this.pending=new Set((Array.isArray(saved?.pending)?saved.pending:[]).filter(id=>events.some(event=>event.id===id)));
     if (Array.isArray(saved?.angles) && saved.angles.length===4 && saved.angles.every(Number.isFinite)) this.angles=saved.angles;
     else this.angles=null;
+    this.circuitRun?.stop('Shared inputs changed in another tab; this run was invalidated.');
     this.active=null;this.running=false;this.pendingPlan=null;this.latest=null;
     this.changedCoin=null;this.invalidatedByOtherTab=false;
     this.status('Shared views and paper account synced from another tab. Older proposals were cleared; optimization is available with fresh markets.');
@@ -146,12 +149,16 @@ export class PortfolioController {
     this.running=true; this.latest=null; this.pendingPlan=null; this.pending.clear(); this.save();window.dispatchEvent(new CustomEvent('qswipe:run',{detail:{phase:'started',version:snapshot.version}}));
     this.status(`Frozen snapshot v${snapshot.version}: retuning one joint QAOA circuit (${trigger}). New swipes start the next batch.`);
     $('angle-state').textContent = this.angles ? 'Angles: previous values reused as the starting point; retuning within 48 evaluations.' : 'Angles: first-run initialization; retuning within 48 evaluations.';
+    this.circuitRun.start(snapshot, !!this.angles, trigger);
     this.worker.postMessage({ type:'optimize', snapshot, previousAngles:this.angles, seed }); this.renderResult(); this.updateAvailability();
   }
   receive(data) {
     if (!this.active || data.snapshotId !== this.active.snapshot.id) return;
+    if (data.type === 'progress') { this.circuitRun?.progress(data.progress); return; }
+    if (!['result','error'].includes(data.type)) return;
     this.running=false;
-    if (data.type === 'error') { this.status(`Local circuit failed: ${data.message || data.error || 'unknown error'}. Current positions are held.`); this.updateAvailability(); return; }
+    if (data.type === 'error') { this.circuitRun?.stop(data.message || data.error || 'Local simulation failed.'); this.status(`Local circuit failed: ${data.message || data.error || 'unknown error'}. Current positions are held.`); this.updateAvailability(); return; }
+    this.circuitRun?.finish(data.result);
     this.latest={snapshot:this.active.snapshot,result:data.result,previousChoices:this.active.previousChoices}; this.runs.push(this.latest); this.runs=this.runs.slice(-6); this.angles=data.result.angles; this.save();
     const flatReference=data.result.exact?.choices.every(choice=>choice===0) && this.account.positions.every(position=>position.qty===0);
     this.status(this.isHistorical() ? 'The completed snapshot is historical because views or positions changed. It cannot be applied.' : flatReference ? 'Optimization completed. The exact optimum is flat at these convictions and modeled costs; holding cash is a valid result. Compare the sampled proposal before any paper rebalance.' : data.result.selected ? 'One joint sampled proposal is ready. Review its paper rebalance before applying.' : 'No feasible sampled candidate. Current portfolio is held; the classical reference remains separate.');

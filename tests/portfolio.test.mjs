@@ -188,3 +188,19 @@ test('continuous marked holdings are an extra Hold option with zero turnover and
   const generous=makeSnapshot({...snapshot,settings:{...snapshot.settings,minimumImprovement:1e3}});assert.equal(compareWithHold(generous,exact).eligible,false);
   const result=optimizeLocal(snapshot,null,456);close(result.holdComparison.heldCost,held.cost);assert.equal(result.holdComparison.eligible,result.selected!==null&&held.cost-result.selected.cost>=.0001);
 });
+
+test('live telemetry reports actual budget in order without changing the seeded solve',()=>{
+  const snapshot=fixture(), events=[];
+  const result=optimizeLocal(snapshot,null,42,{onProgress:event=>events.push(event)});
+  const plain=optimizeLocal(snapshot,null,42);
+  assert.deepEqual(result.angles,plain.angles);
+  assert.deepEqual(result.distribution,plain.distribution);
+  assert.equal(result.gap,plain.gap);
+  assert.equal(events[0].stage,'prepare');
+  const evaluations=events.filter(event=>event.stage==='retune');
+  assert.equal(evaluations.length,snapshot.settings.evaluationBudget);
+  assert.match(evaluations.at(-1).message,/Evaluation 48\/48/);
+  assert(events.find(event=>event.stage==='sample').message.includes('1024'));
+  assert.equal(events.at(-1).stage,'reference');
+  events.forEach((event,i)=>{assert(Number.isFinite(event.elapsedMs));if(i){assert(event.elapsedMs>=events[i-1].elapsedMs);assert(event.percent>=events[i-1].percent);}});
+});

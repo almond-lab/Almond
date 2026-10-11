@@ -53,3 +53,14 @@ test('missing persistence does not silently erase a session held only in memory'
   assert.equal(controller.version,7);
   assert.equal(controller.account.balance,9876);
 });
+
+test('progress preserves an active solve and ignores telemetry from stale snapshots',()=>{
+  const controller=Object.create(PortfolioController.prototype), progress=[];
+  Object.assign(controller,{active:{snapshot:{id:'current'}},running:true,circuitRun:{progress:e=>progress.push(e)}});
+  controller.receive({type:'progress',snapshotId:'old',progress:{percent:10}});
+  assert.deepEqual(progress,[]);
+  controller.receive({type:'progress',snapshotId:'current',progress:{percent:40}});
+  assert.equal(controller.running,true);
+  assert.equal(controller.latest,undefined);
+  assert.deepEqual(progress,[{percent:40}]);
+});

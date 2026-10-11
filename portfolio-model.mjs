@@ -305,10 +305,13 @@ export function randomSamplingBaselines(snapshotInput, seed=1) {
 /** Fixed-budget warm-started coordinate/random tuning against exact CPU expectations. */
 export function optimizeLocal(snapshotInput, previousAngles = null, seed = 1, testOptions = {}) {
   const started = clock(), snapshot = makeSnapshot(snapshotInput), objective = buildObjective(snapshot);
+  const emit = (stage, percent, message) => testOptions.onProgress?.({stage, percent, message, elapsedMs:clock()-started});
+  emit('prepare', 3, 'Building frozen QUBO costs for 256 basis states; preparing Hadamard superposition.');
   const costs = Array.from({ length: DIMENSION }, (_, state) => objective.evaluateState(state));
   const rng = seededRandom(seed), initialization = anglesFor(previousAngles, snapshot.settings.layers);
   let angles = initialization.angles, best = simulateQaoa(costs, angles), evaluations = 1;
   const initialExpectedCost = best.expectedCost;
+  emit('retune', 5, `Evaluation 1/${snapshot.settings.evaluationBudget} · expected cost ${best.expectedCost.toFixed(6)}`);
   while (evaluations < snapshot.settings.evaluationBudget) {
     const proposal = angles.slice(), index = (evaluations-1) % proposal.length;
     const round = Math.floor((evaluations-1) / (proposal.length * 2));
@@ -317,8 +320,10 @@ export function optimizeLocal(snapshotInput, previousAngles = null, seed = 1, te
     if (evaluations % 9 === 0) for (let q = 0; q < proposal.length; q++) proposal[q] += (rng()-.5) * .3;
     const candidate = simulateQaoa(costs, proposal); evaluations++;
     if (candidate.expectedCost < best.expectedCost) { angles = proposal; best = candidate; }
+    emit('retune', 5+75*evaluations/snapshot.settings.evaluationBudget, `Evaluation ${evaluations}/${snapshot.settings.evaluationBudget} · best expected cost ${best.expectedCost.toFixed(6)} · cost-phase / mixer layers simulated`);
   }
   const tuned = clock(), counts = new Uint32Array(DIMENSION), shots = snapshot.settings.localShots;
+  emit('sample', 85, `Sampling ${shots} shots from the tuned state-vector distribution.`);
   if (testOptions.sampleStates) {
     if (testOptions.sampleStates.length !== shots) throw new RangeError('Injected sample count must equal configured shots');
     for (const state of testOptions.sampleStates) { if (!Number.isInteger(state) || state < 0 || state >= DIMENSION) throw new RangeError('Injected states must be integers from 0 to 255'); counts[state]++; }
@@ -328,9 +333,11 @@ export function optimizeLocal(snapshotInput, previousAngles = null, seed = 1, te
     for (let sample = 0; sample < shots; sample++) { const u = rng(); let low = 0, high = DIMENSION-1; while (low < high) { const mid = (low+high)>>1; if (u < cumulative[mid]) high = mid; else low = mid+1; } counts[low]++; }
   }
   const sampled = clock(), referenceStarted = clock();
+  emit('reference', 92, 'Selecting only feasible sampled portfolios; exhaustively checking all 81 classical targets.');
   const outcome = selectSampled(snapshot, counts, objective), finished = clock();
   const circuit = buildIonQCircuit(snapshot, angles);
   const holdComparison=compareWithHold(snapshot,outcome.selected);
+  emit('reference', 96, 'Comparing Hold and shot-matched random baselines.');
   const baselineStarted=clock(),randomBaselines=randomSamplingBaselines(snapshot,seed),baselineFinished=clock();
   return { snapshotId: snapshot.id, snapshotVersion: snapshot.version, seed, angles, ...outcome, holdComparison, randomBaselines,
     benchmarkBudgetNote: 'Random baselines match final shots only; QAOA additionally uses exact CPU state-vector training evaluations. This is not a total-compute-matched speedup comparison.',
