@@ -421,3 +421,5 @@ details[open] .details-plus { transform:rotate(45deg); }
   .benchmark-presets button { min-width:0; padding:11px 12px; font-size:13px; }
 }
 .orbital-scene,.art-grain,.art-wash { pointer-events:none; }
+/* Keep the expanded landing navigation clear on smaller tablets. */
+@media(max-width:850px){.site-header nav{display:none}}
