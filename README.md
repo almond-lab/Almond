@@ -39,7 +39,7 @@ These are **USDC perpetual contracts**. The output is one joint allocation, such
 2. **Make your call.** Right means bullish over the next 24 hours; left means bearish. Choose the affected asset and thesis group. Skip when you have no view.
 3. **Watch conviction move.** Every directional swipe updates the relevant belief and cost terms immediately. Repeated swipes on the same thesis have capped influence; evidence decays with a 24-hour half-life.
 4. **Freeze the moment.** Ten new directional swipes, or **Optimize now**, freeze beliefs, prices, risk, funding and current positions into one snapshot.
-5. **Let the circuit search.** Previous angles warm-start a fixed-budget local QAOA retune. The circuit distribution supplies sampled portfolio combinations.
+5. **Let the circuit search.** Previous angles warm-start a fixed-budget classical QAOA retune on Vercel. The final circuit runs on IonQ’s ideal cloud simulator; its returned probabilities supply 1,024 seeded portfolio draws.
 6. **Watch the rebalance land.** A successful run automatically applies its best eligible sampled target to the paper account. Positions, simulated fills and fees are visible.
 
 Skips do not count toward the ten-swipe trigger. Undo removes the original directional event. Your swipe expresses a preference; it is not a calibrated return forecast.
@@ -82,7 +82,7 @@ H is the 24-hour horizon; f is estimated hourly funding; τ combines fees, half-
 
 The app maps the QUBO to an Ising Hamiltonian and runs two QAOA layers: Hadamard preparation, cost-phase `Rz`/`Rzz` rotations, and `Rx` mixers. Four shared angles retune within **48 exact state-vector evaluations**, followed by **1,024 sampled shots**. Training includes all 256 outcomes; final selection filters invalid and demo-ineligible states.
 
-The current app executes this quantum algorithm through a **classical browser-local simulator**. QAOA selects the lowest-cost eligible combination actually sampled. It does not guarantee the global optimum.
+The portfolio optimizer executes the final frozen circuit on **IonQ’s ideal cloud simulator**, with one provider job per optimization. Its 48 angle-training evaluations run classically on Vercel; IonQ returns probabilities (it ignores shots on the ideal simulator), and Vercel draws 1,024 seeded samples from that distribution. The console shows the actual job ID and provider status. If IonQ omits small probabilities, the app reports returned probability mass and normalizes only the returned support; it never invents missing states. Substantially incomplete distributions are rejected. Provider failures hold existing positions; no local result silently replaces IonQ. Isolated teaching and SK research examples still use a browser-local simulator. QAOA selects the lowest-cost eligible combination actually sampled. It does not guarantee the global optimum.
 
 **Quantum curiosity. Classical receipts.**
 
@@ -99,7 +99,7 @@ The exact reference independently enumerates the 81 ternary targets, applies the
 | **Quantum Lab** | Rendered LaTeX, the cost function, QUBO/Ising mapping, circuit stages, probabilities and benchmark evidence |
 | **Python Code** | Actual executable Qollab source with locally bundled Highlight.js IDE-style syntax coloring, copy controls and downloads |
 
-GC Artum, orange, warm cream and dark surfaces give the interface its Almond identity. Touch, mouse, keyboard controls and optional haptics keep the swipe interaction responsive. The circuit panel lives inside Optimize Portfolio rather than following you around every page. Every completed local solve automatically starts a clearly labelled visual replay, without delaying actual allocation or disguising the fast CPU computation.
+GC Artum, orange, warm cream and dark surfaces give the interface its Almond identity. Touch, mouse, keyboard controls and optional haptics keep the swipe interaction responsive. The circuit panel lives inside Optimize Portfolio rather than following you around every page. Every completed IonQ run automatically starts a clearly labelled visual replay, without delaying allocation. While the job is pending, the panel shows actual provider status and its job ID.
 
 ## Research spotlight: the QAOA connection
 
@@ -142,7 +142,7 @@ See [Python setup](qollab/README.md) and [JS setup](qollab-js/README.md) for the
 Public Hyperliquid order books and metadata need no trading credentials. Configure server secrets in Vercel:
 
 - `X_BEARER_TOKEN` enables X recent search. Optional `X_FEED_ACCESS_TOKEN` guards feed reads; `X_FEED_ACCOUNTS` restricts sources.
-- `IONQ_API_KEY` and a ≥32-character `ALMOND_EXECUTION_TOKEN` enable the separate protected provider connector. `IONQ_BACKEND` defaults to simulator; hardware requires explicit `ALMOND_ALLOW_QPU=true`.
+- `IONQ_API_KEY` and a ≥32-character `ALMOND_EXECUTION_TOKEN` enable the portfolio simulator and separate protected provider connector. The token signs portfolio job receipts and stays server-side. `/api/portfolio` builds a bounded eight-qubit circuit from a validated frozen snapshot and forces the `simulator` backend, regardless of hardware settings. Each instance coalesces duplicate snapshot submissions and bounds new submissions to ten per minute; it is not a distributed quota limiter. `IONQ_BACKEND` defaults to simulator; hardware requires explicit `ALMOND_ALLOW_QPU=true`.
 
 X recent search checks for new posts every minute while the page is visible, with a bounded one-minute server cache. Refresh prioritizes the newest unseen post; reviewed and skipped post IDs are remembered across market changes and reloads. Unread posts are merged into a deduplicated backlog, and an exhausted deck stays exhausted until new results arrive or you explicitly revisit it. This is polling, rather than a streaming firehose. Posts retain attribution and source links. Missing credentials produce a connection state, never fabricated content. Provider keys stay server-side and out of exported snapshots.
 
@@ -159,3 +159,23 @@ Primary references: [QAOA paper](https://arxiv.org/abs/1411.4028), [IBM RZZ](htt
 ---
 
 **QSwipe. Put a little interference between the impulse and the allocation.**
+
+## What is running on Vercel?
+
+This repository is the complete source of the deployed app, including its backend. Generated `dist/` output is recreated by `npm run build`; credentials and Vercel account state are intentionally excluded.
+
+| Source | Responsibility |
+| --- | --- |
+| `signals.html`, `signals.js`, `qswipe-ui.mjs`, CSS and `assets/` | Swipe interface, navigation, local preferences and visualizations |
+| `portfolio-controller.mjs`, `paper-account.mjs`, `portfolio-market.mjs` | Frozen snapshots, live Hyperliquid inputs and simulated allocation ledger |
+| `portfolio-model.mjs` | Cost function, QAOA circuit builder, classical angle tuning and exhaustive reference |
+| `api/portfolio.mjs`, `server/portfolio-service.mjs` | Vercel portfolio API: tune, submit one IonQ simulator job, verify signed receipts, retrieve probabilities and sample eligible targets |
+| `api/quantum.mjs`, `server/quantum-service.mjs` | Server-only IonQ API authentication, submission, status and result artifacts; separate manual connector |
+| `api/x-feed.mjs`, `server/x-feed-service.mjs` | Server-only X authentication and one-minute recent-search batches |
+| `scripts/build.mjs`, `vercel.json`, `.env.example` | Build, function routing and environment configuration |
+| `qollab/`, `qollab-js/` | Independently executable frozen examples for Qollab |
+| `tests/` | Model, provider boundary, sampling and paper-account checks |
+
+Deploy this repo to Vercel with the root directory unchanged, set the variables in `.env.example`, and use `npm run build`. Locally, copy `.env.example` to `.env.local`, set your own credentials, run `npm run dev`, and open `http://127.0.0.1:3000`. The portfolio flow is `POST /api/portfolio` with `action: submit`, then repeated `action: status` calls carrying the same frozen snapshot and signed receipt. It never exposes an IonQ key to the browser or submits a hardware job.
+
+IonQ documents free simulator usage subject to its provider allowance: [simulator guide](https://www.ionq.com/resources/get-started-with-hardware-noise-model-simulation). Ideal-simulator probabilities and shot behavior follow the [v0.4 API](https://docs.ionq.com/api-reference/v0.4/jobs/create-job). This app uses `simulator` with the default ideal noise model, rather than the Aria hardware-noise model.

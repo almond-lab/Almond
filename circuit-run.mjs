@@ -3,8 +3,8 @@ export class CircuitRun {
   constructor() {
     this.root = document.createElement('section');
     this.root.className = 'circuit-run'; this.root.hidden = true;
-    this.root.setAttribute('aria-label', 'Local quantum circuit execution');
-    this.root.innerHTML = `<div class="run-heading"><div><p class="eyebrow">LIVE CIRCUIT / LOCAL CPU SIMULATOR</p><h2>Inside your optimization.</h2></div><div class="run-actions"><span class="run-badge">Ready</span><button class="run-replay text-button" type="button" hidden>Replay circuit ↻</button></div></div><p class="run-status" role="status"></p><div class="run-diagram"></div><div class="run-footer"><progress max="100" value="0" aria-label="Optimization progress"></progress><span class="run-budget"></span></div><details class="run-console"><summary>Execution console</summary><pre tabindex="0" aria-label="Execution log"></pre></details>`;
+    this.root.setAttribute('aria-label', 'IonQ simulator circuit execution');
+    this.root.innerHTML = `<div class="run-heading"><div><p class="eyebrow">LIVE CIRCUIT / IONQ CLOUD SIMULATOR</p><h2>Inside your optimization.</h2></div><div class="run-actions"><span class="run-badge">Ready</span><button class="run-replay text-button" type="button" hidden>Replay circuit ↻</button></div></div><p class="run-status" role="status"></p><div class="run-diagram"></div><div class="run-footer"><progress max="100" value="0" aria-label="Optimization progress"></progress><span class="run-budget"></span></div><details class="run-console"><summary>Execution console</summary><pre tabindex="0" aria-label="Execution log"></pre></details>`;
     document.querySelector('#optimization-workspace').append(this.root);
     this.rows = []; this.replayTimers = [];
     this.root.querySelector('.run-replay').addEventListener('click', () => this.replay());
@@ -19,7 +19,7 @@ export class CircuitRun {
     this.root.querySelector('.run-budget').textContent = `${snapshot.settings.evaluationBudget} evaluations · ${snapshot.settings.localShots} shots`;
     this.log(`Snapshot ${snapshot.id} · v${snapshot.version} · trigger: ${trigger}`);
     this.log(`${warm ? 'Warm start: previous angles' : 'Initial angles'} · ${snapshot.settings.layers} QAOA layers · 8 qubits / 256 amplitudes`);
-    this.status('Frozen inputs queued for local state-vector simulation.');
+    this.status('Frozen inputs queued for classical angle tuning and IonQ final-circuit simulation.');
     this.activate('prepare');
     if (trigger === 'manual') this.root.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',block:'start'});
   }
@@ -39,7 +39,8 @@ export class CircuitRun {
     this.root.querySelector('.run-badge').textContent = 'Completed'; this.activate('sample');
     this.status(`Completed in ${result.timing.totalMs.toFixed(1)} ms · ${result.metrics.evaluations} evaluations · ${result.resources.shots} sampled shots. Automatic paper rebalance follows.`);
     this.log(`Completed · feasible sampled target: ${result.selected ? 'yes' : 'none'} · exact optimum gap: ${result.gap ?? 'unavailable'}`,result.timing.totalMs);
-    this.root.querySelector('.run-budget').textContent = 'Local classical simulation · no QPU job';
+    this.root.querySelector('.run-budget').textContent = result.execution?`IonQ ideal simulator · job ${result.execution.jobId} · CPU draws from provider probabilities`:'Local teaching simulation · no QPU job';
+    if(result.execution){this.log(`Provider probabilities received · ${result.execution.sampling}`);this.log(result.execution.probabilityNote);}
     this.replay();
   }
   resetReplay() {
