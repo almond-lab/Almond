@@ -36,7 +36,7 @@ These are **USDC perpetual contracts**. The output is one joint allocation, such
 ## Swipe. Solve. See what changed.
 
 1. **Read the room.** Actual market-relevant X posts meet live Hyperliquid order books and reference prices.
-2. **Make your call.** Right means bullish over the next 24 hours; left means bearish. Choose the affected asset and thesis group. Skip when you have no view.
+2. **Make your call.** Right means Agree; left means Disagree. Agreement adds positive preference evidence, disagreement adds negative evidence. The MVP does not infer price sentiment from the post text. Choose the affected asset and thesis group. Skip when you have no view.
 3. **Watch conviction move.** Every directional swipe updates the relevant belief and cost terms immediately. Repeated swipes on the same thesis have capped influence; evidence decays with a 24-hour half-life.
 4. **Freeze the moment.** Ten new directional swipes, or **Optimize now**, freeze beliefs, prices, risk, funding and current positions into one snapshot.
 5. **Let the circuit search.** Previous angles warm-start a fixed-budget classical QAOA retune on Vercel. The final circuit runs on IonQ’s ideal cloud simulator; its returned probabilities supply 1,024 seeded portfolio draws.
@@ -96,7 +96,7 @@ The exact reference independently enumerates the 81 ternary targets, applies the
 | **Portfolio** | The 10,000 USDC paper account, actual marked position weights, separate conviction scores, fees and ledger |
 | **Optimize Portfolio** | Automatic redirects when a run starts; live circuit progress, console toggle, replay and allocation result |
 | **How it works** | Six interactive steps, with teaching examples isolated from your account |
-| **Quantum Lab** | Rendered LaTeX, the cost function, QUBO/Ising mapping, circuit stages, probabilities and benchmark evidence |
+| **Quantum Lab** | Plain-language cost explanation, six-step interactive circuit walkthrough, rendered LaTeX, QUBO/Ising mapping, probabilities and benchmark evidence |
 | **Python Code** | Actual executable Qollab source with locally bundled Highlight.js IDE-style syntax coloring, copy controls and downloads |
 
 GC Artum, orange, warm cream and dark surfaces give the interface its Almond identity. Touch, mouse, keyboard controls and optional haptics keep the swipe interaction responsive. The circuit panel lives inside Optimize Portfolio rather than following you around every page. Every completed IonQ run automatically starts a clearly labelled visual replay, without delaying allocation. While the job is pending, the panel shows actual provider status and its job ID.

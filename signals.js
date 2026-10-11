@@ -42,7 +42,7 @@ function appendPostText(node, post) {
 function card(post) {
   const article = el('article', 'pulse-card');
   article.tabIndex = 0;
-  article.setAttribute('aria-label', `X post by ${post.author.name}. Use right arrow for a bullish 24-hour view or left arrow for a bearish view.`);
+  article.setAttribute('aria-label', `X post by ${post.author.name}. Use right arrow to Agree or left arrow to Disagree.`);
   article.setAttribute('aria-describedby', 'keyboard-hint');
   const kicker = el('div', 'card-kicker');
   kicker.append(el('span', '', `MARKET CONVERSATION / ${post.markets.map(marketName).join(' · ')}`));
@@ -80,10 +80,10 @@ function card(post) {
   article.append(metrics);
   const tags = el('div', 'card-tags');
   for (const coin of post.markets) tags.append(el('span', '', SIGNAL_MARKETS.find(m => m.coin === coin)?.label));
-  if (reactions[post.id]) tags.append(el('span', 'your-reaction', `Your takeaway: ${reactions[post.id].decision === 'agree' ? 'Bullish' : 'Bearish'}`));
+  if (reactions[post.id]) tags.append(el('span', 'your-reaction', `Your takeaway: ${reactions[post.id].decision === 'agree' ? 'Agree' : 'Disagree'}`));
   article.append(tags);
   // Swipe affordances are separate Almond feedback; they do not invoke X actions.
-  article.append(el('span', 'swipe-stamp agree-stamp', 'BULLISH'), el('span', 'swipe-stamp disagree-stamp', 'BEARISH'));
+  article.append(el('span', 'swipe-stamp agree-stamp', 'AGREE'), el('span', 'swipe-stamp disagree-stamp', 'DISAGREE'));
   article.addEventListener('pointerdown', beginDrag);
   article.addEventListener('pointermove', moveDrag);
   article.addEventListener('pointerup', endDrag);
@@ -118,7 +118,7 @@ function renderJournal() {
     const row = el('div', `saved-item ${r.decision}`);
     const detail = el('div', 'saved-detail');
     detail.append(link(r.username ? `@${r.username}` : `Post ${id}`, r.url), el('small', '', `${r.markets.map(marketName).join(' · ')} / ${dateText(r.at)}`));
-    row.append(el('span', 'saved-direction', r.decision === 'agree' ? '↗' : '↙'), detail, el('span', 'saved-decision', r.decision === 'agree' ? 'Bullish' : 'Bearish'));
+    row.append(el('span', 'saved-direction', r.decision === 'agree' ? '↗' : '↙'), detail, el('span', 'saved-decision', r.decision === 'agree' ? 'Agree' : 'Disagree'));
     list.append(row);
   }
 }
@@ -176,7 +176,7 @@ async function react(decision) {
   reactions = recordReaction(reactions, { ...post, markets: [coin] }, decision, coin);
   seen.add(post.id); saveDismissed();
   const stored = save();
-  message(`${decision === 'agree' ? 'Bullish' : 'Bearish'} ${marketName(coin)} view recorded for the next 24 hours${stored ? ' in this browser.' : ' for this visit; browser storage is unavailable.'}`);
+  message(`${decision === 'agree' ? 'Agree' : 'Disagree'} opinion for ${marketName(coin)} recorded for the next 24 hours${stored ? ' in this browser.' : ' for this visit; browser storage is unavailable.'}`);
   renderDeck();
 }
 
@@ -299,7 +299,7 @@ $('export-reactions').addEventListener('click', () => {
   const url = URL.createObjectURL(new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' }));
   const a = el('a'); a.href = url; a.download = 'almond-market-pulse-reactions.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10_000);
 });
-if ($('clear-reactions')) $('clear-reactions').addEventListener('click', () => { reactions = {}; history = []; seen.clear(); skipped.clear(); saveDismissed(); portfolio.clear(); save(); message('Directional views cleared. Your paper positions are held.'); renderDeck(); });
+if ($('clear-reactions')) $('clear-reactions').addEventListener('click', () => { reactions = {}; history = []; seen.clear(); skipped.clear(); saveDismissed(); portfolio.clear(); save(); message('Opinions cleared. Your paper positions are held.'); renderDeck(); });
 document.addEventListener('keydown', event => {
   if (document.body.dataset.view && document.body.dataset.view !== 'swipe') return;
   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.target.closest('input,select,textarea,button,a,[contenteditable]')) return;
