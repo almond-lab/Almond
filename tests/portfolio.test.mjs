@@ -204,3 +204,23 @@ test('live telemetry reports actual budget in order without changing the seeded 
   assert.equal(events.at(-1).stage,'reference');
   events.forEach((event,i)=>{assert(Number.isFinite(event.elapsedMs));if(i){assert(event.elapsedMs>=events[i-1].elapsedMs);assert(event.percent>=events[i-1].percent);}});
 });
+
+test('demo sampling and exact search exclude all cash and current targets on the same objective',()=>{
+  const current=[1,0,-1,0],snapshot=fixture({experiment:{forceRebalance:true,previousChoices:current}});
+  const counts=new Uint32Array(256);counts[0]=500;counts[choicesToState(current)]=400;counts[choicesToState([-1,0,1,0])]=124;
+  const result=selectSampled(snapshot,counts);
+  assert.deepEqual(result.selected.choices,[-1,0,1,0]);assert.equal(result.selected.count,124);
+  assert(result.exact.choices.some(c=>c!==0));assert.notDeepEqual(result.exact.choices,current);
+  const eligible=[];for(let code=0;code<256;code++){const choices=stateToChoices(code);if(choices&&choices.some(c=>c!==0)&&choices.some((c,i)=>c!==current[i]))eligible.push(evaluateChoices(snapshot,choices).cost);}
+  close(result.exact.cost,Math.min(...eligible));assert(result.gap>=0);
+  counts.fill(0);counts[0]=1024;assert.equal(selectSampled(snapshot,counts).selected,null);
+});
+test('repeated demo solves produce sampled changed non-flat targets with warm starts',()=>{
+  let current=[0,0,0,0],angles=null;
+  for(let i=0;i<10;i++){
+    const snapshot=fixture({convictions:[0,0,0,0],experiment:{forceRebalance:true,previousChoices:current}}),result=optimizeLocal(snapshot,angles,100+i);
+    assert(result.selected.count>0);assert(result.selected.choices.some(c=>c!==0));assert.notDeepEqual(result.selected.choices,current);
+    assert(result.exact.choices.some(c=>c!==0));assert.notDeepEqual(result.exact.choices,current);
+    current=result.selected.choices;angles=result.angles;
+  }
+});

@@ -73,6 +73,20 @@ class RuntimeContract(unittest.TestCase):
         self.assertEqual(report["resources"]["backendSubmissions"], 1)
         self.assertEqual(json.loads(downloads[0][2]), report)
 
+    def test_demo_constraints_filter_samples_and_classical_reference_identically(self):
+        artifact = json.loads(SNAPSHOT)
+        snapshot = artifact["snapshot"]
+        snapshot["experiment"] = {"forceRebalance": True, "previousChoices": [1, 0, -1, 0]}
+        exact = self.namespace["classical_reference"](snapshot)
+        self.assertTrue(any(exact["choices"]))
+        self.assertNotEqual(exact["choices"], [1, 0, -1, 0])
+        previous = self.namespace["state_for"]([1, 0, -1, 0])
+        changed = self.namespace["state_for"]([-1, 0, 1, 0])
+        outcome = self.namespace["evaluate_counts"](snapshot, artifact["objective"], {0: 500, previous: 400, changed: 124}, exact)
+        self.assertEqual(outcome["selected"]["choices"], [-1, 0, 1, 0])
+        self.assertEqual(outcome["selected"]["count"], 124)
+        self.assertIsNone(self.namespace["evaluate_counts"](snapshot, artifact["objective"], {0: 1024}, exact)["selected"])
+
     def test_script_load_submits_nothing(self):
         self.assertEqual(self.device.calls, [])
         self.assertEqual(self.namespace["main"].__annotations__, {

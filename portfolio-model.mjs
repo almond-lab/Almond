@@ -89,6 +89,7 @@ export function makeSnapshot(input) {
     for (const key of Object.keys(result)) { result[key] = finite(result[key], `executionRates[${i}].${key}`); if (result[key] < 0) throw new RangeError('Execution rates cannot be negative'); }
     return result;
   }) : COINS.map(() => ({ feeRate: settings.feeRate, spreadBps: settings.spreadBps, slippageBps: settings.slippageBps }));
+  if (input.experiment?.forceRebalance) vector(input.experiment.previousChoices ?? input.holdings?.map(Math.sign) ?? [0,0,0,0], 'previousChoices', c=>{if(![-1,0,1].includes(c))throw new TypeError('Invalid previous choices');return c;});
   const version = finite(input.version ?? 0, 'version');
   if (!Number.isInteger(version) || version < 0) throw new RangeError('Snapshot version must be a nonnegative integer');
   return freeze({ ...clone(input), id: String(input.id ?? `snapshot-${version}`), version,
@@ -217,6 +218,13 @@ export function buildObjective(snapshotInput) {
   return { snapshotId: snapshot.id, linear, pairs, offset, invalidPenalty, penaltyProof: 'Repairing each 11 pair to 00 preserves economic exposures and lowers the objective by P',
     evaluateState, costBreakdown, encoding: { qubits: 8, displayOrder: 'q0 first (leftmost)', pairs: COINS.map((coin, i) => ({ coin, long: 2*i, short: 2*i+1, invalid: '11' })) } };
 }
+/** Demo constraint is a post-sampling filter, shared with the exact reference. */
+export function allowedTarget(snapshot, choices) {
+  if (!choices) return false;
+  if (!snapshot.experiment?.forceRebalance) return true;
+  const previous = snapshot.experiment.previousChoices ?? snapshot.holdings.map(Math.sign);
+  return choices.some(c=>c!==0) && choices.some((c,i)=>c!==previous[i]);
+}
 /** Independent classical reference enumerates the 3^4 choices, not QUBO states. */
 export function solveExact(snapshotInput) {
   const snapshot = makeSnapshot(snapshotInput);
@@ -225,7 +233,7 @@ export function solveExact(snapshotInput) {
     let remainder = code;
     const choices = COINS.map(() => { const digit = remainder % 3; remainder = Math.floor(remainder / 3); return digit === 0 ? 0 : digit === 1 ? 1 : -1; });
     const breakdown = rawFinance(snapshot, choices);
-    if (breakdown.gross > snapshot.settings.grossLimit + EPS) continue;
+    if (breakdown.gross > snapshot.settings.grossLimit + EPS || !allowedTarget(snapshot,choices)) continue;
     const state = choicesToState(choices), cost = breakdown.total;
     if (!best || cost < best.cost - EPS || (Math.abs(cost-best.cost) <= EPS && state < best.state)) best = { state, bitstring: stateBitstring(state), choices, cost, breakdown };
   }
@@ -276,7 +284,7 @@ export function selectSampled(snapshotInput, counts, objectiveInput) {
   for (let state = 0; state < DIMENSION; state++) {
     const count = counts[state]; if (!count) continue;
     const choices = stateToChoices(state), breakdown = objective.costBreakdown(state), cost = objective.evaluateState(state);
-    const feasible = !!choices && breakdown.gross <= snapshot.settings.grossLimit + EPS;
+    const feasible = allowedTarget(snapshot,choices) && breakdown.gross <= snapshot.settings.grossLimit + EPS;
     distribution.push({ state, bitstring: stateBitstring(state), choices, count, probability: shots ? count/shots : 0, cost, feasible });
     if (choices) validSamples += count;
     if (!feasible) continue;
@@ -292,7 +300,7 @@ export function selectSampled(snapshotInput, counts, objectiveInput) {
 export function randomSamplingBaselines(snapshotInput, seed=1) {
   const snapshot=makeSnapshot(snapshotInput),shots=snapshot.settings.localShots;
   const objective=buildObjective(snapshot),validStates=[];
-  for(let state=0;state<DIMENSION;state++)if(stateToChoices(state))validStates.push(state);
+  for(let state=0;state<DIMENSION;state++)if(allowedTarget(snapshot,stateToChoices(state)))validStates.push(state);
   const baseline=(name,candidates,baselineSeed)=>{
     const rng=seededRandom(baselineSeed),counts=new Uint32Array(DIMENSION);
     for(let i=0;i<shots;i++)counts[candidates[Math.floor(rng()*candidates.length)]]++;
@@ -300,7 +308,7 @@ export function randomSamplingBaselines(snapshotInput, seed=1) {
       ...selectSampled(snapshot,counts,objective)};
   };
   return {rawBits:baseline('Uniform raw 256 bitstrings',Array.from({length:DIMENSION},(_,i)=>i),`${seed}:raw`),
-    validPortfolios:baseline('Uniform valid 81 portfolios',validStates,`${seed}:valid`)};
+    validPortfolios:baseline(`Uniform ${validStates.length} eligible portfolios`,validStates,`${seed}:valid`)};
 }
 /** Fixed-budget warm-started coordinate/random tuning against exact CPU expectations. */
 export function optimizeLocal(snapshotInput, previousAngles = null, seed = 1, testOptions = {}) {

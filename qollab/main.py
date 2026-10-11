@@ -241,12 +241,23 @@ def construct_circuit(artifact):
     return circuit
 
 
+def allowed_target(snapshot, choices):
+    """Optional hackathon filter; finance Hamiltonian itself is unchanged."""
+    if choices is None:
+        return False
+    experiment = snapshot.get("experiment", {})
+    if not experiment.get("forceRebalance"):
+        return True
+    previous = experiment.get("previousChoices", [1 if q > 0 else -1 if q < 0 else 0 for q in snapshot["holdings"]])
+    return any(choices) and any(c != p for c, p in zip(choices, previous))
+
+
 def classical_reference(snapshot):
     """Exhaustive 3**4 finance evaluation, independent of the sampled circuit."""
     best = None
     for choices in itertools.product((0, 1, -1), repeat=4):
         breakdown = finance(snapshot, choices)
-        if breakdown["gross"] > snapshot["settings"]["grossLimit"] + EPS:
+        if breakdown["gross"] > snapshot["settings"]["grossLimit"] + EPS or not allowed_target(snapshot, choices):
             continue
         candidate = {"state": state_for(choices), "choices": list(choices),
                      "cost": breakdown["total"], "breakdown": breakdown}
@@ -280,7 +291,7 @@ def evaluate_counts(snapshot, objective, counts, exact):
             continue
         choices = choices_for(state)
         breakdown = finance(snapshot, choices) if choices is not None else None
-        feasible = choices is not None and breakdown["gross"] <= snapshot["settings"]["grossLimit"] + EPS
+        feasible = allowed_target(snapshot, choices) and breakdown["gross"] <= snapshot["settings"]["grossLimit"] + EPS
         cost = qubo_cost(objective, state)
         distribution.append({"state": state, "bitstringQ0First": displayed_bits(state), "choices": choices,
                              "count": count, "frequency": count / shots if shots else 0,
@@ -314,14 +325,14 @@ def evaluate_held(snapshot):
 
 
 def random_baselines(snapshot, objective, exact, shots, seed=731):
-    valid = [state for state in range(256) if choices_for(state) is not None]
+    valid = [state for state in range(256) if allowed_target(snapshot, choices_for(state))]
     outcomes = {}
     for name, pool in (("rawBits", list(range(256))), ("validPortfolios", valid)):
         rng, counts = random.Random(f"{seed}:{name}"), {}
         for _ in range(shots):
             state = rng.choice(pool)
             counts[state] = counts.get(state, 0) + 1
-        outcomes[name] = {"name": "Uniform raw 256 bitstrings" if name == "rawBits" else "Uniform valid 81 portfolios",
+        outcomes[name] = {"name": "Uniform raw 256 bitstrings" if name == "rawBits" else f"Uniform {len(valid)} eligible portfolios",
                           "expectedValidityRate": 81/256 if name == "rawBits" else 1,
                           **evaluate_counts(snapshot, objective, counts, exact)}
     return outcomes
