@@ -55,6 +55,24 @@ class RuntimeContract(unittest.TestCase):
         os.chdir(self.old_cwd)
         self.folder.cleanup()
 
+    def test_js_bridge_returns_json_and_submits_exactly_once(self):
+        source = (ROOT / "qollab-js/portfolio.py").read_text()
+        # Keep the independent financial validation identical across starters.
+        core = SOURCE[:SOURCE.index('if Path("snapshot.json").is_file():')]
+        self.assertTrue(source.startswith(core))
+        bridge = types.ModuleType("js")
+        downloads = []
+        bridge.sendFile = lambda *args: downloads.append(args)
+        namespace = {"__name__": "portfolio"}
+        with patch.dict(sys.modules, {"js": bridge}), contextlib.redirect_stdout(self.out):
+            exec(compile(source, "portfolio.py", "exec"), namespace)
+            self.assertEqual(self.device.calls, [])
+            report = json.loads(namespace["run_portfolio"](self.device, 256))
+        self.assertEqual(self.device.calls, [{"shots": 256}])
+        self.assertEqual(report["metrics"]["returnedShots"], 256)
+        self.assertEqual(report["resources"]["backendSubmissions"], 1)
+        self.assertEqual(json.loads(downloads[0][2]), report)
+
     def test_script_load_submits_nothing(self):
         self.assertEqual(self.device.calls, [])
         self.assertEqual(self.namespace["main"].__annotations__, {

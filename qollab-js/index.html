@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="main.css"><title>QSwipe · Quantum portfolio lab</title></head>
+<body><main><header><span class="brand">QSwipe<span>↗</span></span><span class="tag">FROZEN PORTFOLIO EXPERIMENT</span></header>
+<section class="hero"><p class="eyebrow">8 QUBITS / 2 QAOA LAYERS / 81 VALID PORTFOLIOS</p><h1>One portfolio.<br><em>Every outcome counts.</em></h1><p>Compare the best feasible portfolio actually sampled by your selected backend with the exact classical optimum.</p></section>
+<p id="status" role="status" aria-live="polite">Submitting one frozen circuit to the Qollab backend…</p>
+<section class="metrics" aria-label="Benchmark metrics"><article><small>Sampled objective</small><strong id="sampled">—</strong></article><article><small>Exact classical optimum</small><strong id="exact">—</strong></article><article><small>Objective gap</small><strong id="gap">—</strong></article><article><small>Feasible samples</small><strong id="feasible">—</strong></article></section>
+<section><div class="section-title"><h2>Joint portfolio</h2><span id="hold">Awaiting backend</span></div><div id="portfolio" class="portfolio"></div></section>
+<section><h2>Sample distribution</h2><p class="muted">Most frequent feasible portfolios. Bars show their share of all returned shots; rare outcomes still count toward selection.</p><div id="distribution"></div></section>
+<details><summary>Inspect the complete experiment</summary><pre id="record">Results will appear here.</pre></details>
+<footer><p id="provenance">Selected Qollab backend · one submission · no automatic trading</p><p>Simulation is not hardware evidence. Objective gap is not quantum speedup.</p><p>The downloadable JSON report appears in Qollab’s console.</p></footer></main></body></html>
