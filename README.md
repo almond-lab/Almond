@@ -163,3 +163,63 @@ Execution documentation:
 - [IonQ v0.4 job submission](https://docs.ionq.com/api-reference/v0.4/jobs/create-job)
 - [IonQ job status](https://docs.ionq.com/api-reference/v0.4/jobs/get-job)
 - [IonQ result artifacts](https://docs.ionq.com/api-reference/v0.4/jobs/get-job-artifact)
+
+
+## Market Pulse: market-relevant X posts
+
+Open `/signals.html` for a card deck covering BTC, S&P 500, Brent oil and gold.
+Swipe right to like/agree, left to dislike/disagree; the buttons and arrow keys
+provide the same actions. Skip, undo, topic selection, batch ordering, review
+filters, JSON export and clear-history controls are included. These are personal
+Almond opinions, not X likes or measured market sentiment. No X write endpoint
+or exchange order endpoint is called.
+
+To enable real posts, set `X_BEARER_TOKEN` in Vercel's **Production** server
+environment and redeploy. The token must authorize X API v2 recent search, and
+the X account must have available API access/credits. Never paste this provider
+secret into the page, source code, or chat. Until connected, the deck shows an
+explicit setup state with no invented posts.
+
+Optional server settings:
+
+- `X_FEED_ACCESS_TOKEN`: an independent workspace code that guards feed reads.
+  Enter this code in the page's collapsed access section; it is kept only in
+  memory and cleared when leaving the page. Without a guard, cached posts are
+  public to anyone visiting the site.
+- `X_FEED_ACCOUNTS`: comma-separated X usernames, up to 20, to limit search to
+  trusted sources. The default searches the broader English-language topic
+  conversation.
+
+The server exposes GET `/api/x-feed?market=all` (or one exact API coin). It uses
+five fixed, bounded queries and retrieves at most 50 recent posts per batch.
+Search excludes reposts and replies; normalization also excludes sensitive,
+withheld, protected, and malformed results. Authors, timestamps, full text,
+entity links, available photos and source permalinks remain visible. Video links
+open on X. Author identity and topic matches do not prove factual reliability,
+market impact or a quantum/classical strategy result.
+
+Posts refresh at most every five minutes while the page is visible, with manual
+refresh available. Server instances cache/coalesce each market's reads for five
+minutes; public successful responses also use Vercel's CDN cache. This is periodic
+recent search, not a streaming firehose. Most-liked ordering sorts the returned
+batch, not all X posts. Deployment or distributed cold starts may perform extra
+reads; configure X account spending limits to bound overall API consumption.
+Provider errors are sanitized, cached briefly, and shown without stale cards.
+
+Personal reactions persist in local storage in this browser (up to 500 records).
+Only post IDs, source links, handles, timestamps, topic labels and choices are
+saved; post content and API credentials are not persisted. Undo is available for
+this visit. Cross-tab changes are reconciled. JSON exports include the local
+scope and omit credentials. Clearing history affects only this browser.
+
+Validation covers query/auth limits, caching, normalization, provider failures,
+reaction persistence, filters and deliberate swipe thresholds. Browser QA uses
+labelled fixtures to exercise the live-card UI separately from the real setup
+endpoint; production posts remain unavailable until provider access is supplied.
+
+X documentation:
+
+- [Recent search](https://docs.x.com/x-api/posts/search-recent-posts)
+- [Search query construction](https://docs.x.com/x-api/posts/search/integrate/build-a-query)
+- [API credits and spending limits](https://docs.x.com/x-api/getting-started/pricing)
+- [Post display requirements](https://docs.x.com/developer-terms/display-requirements)

@@ -5,7 +5,8 @@
   "installCommand": "",
   "outputDirectory": "dist",
   "functions": {
-    "api/quantum.mjs": { "maxDuration": 60 }
+    "api/quantum.mjs": { "maxDuration": 60 },
+    "api/x-feed.mjs": { "maxDuration": 30 }
   },
   "headers": [
     {

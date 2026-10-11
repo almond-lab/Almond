@@ -1,0 +1,289 @@
+import { SIGNAL_MARKETS, REACTION_KEY, readReactions, recordReaction, selectPosts, reactionCounts, swipeDecision } from './signal-model.mjs';
+
+const $ = id => document.getElementById(id);
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+let market = 'all', posts = [], current = null, reactions = {}, history = [], skipped = new Set(), seen = new Set();
+let busy = false, loading = false, generation = 0, fetchGeneration = 0, controller, autoTimer, dataState = 'loading', fetchedAt = null, pointer = null;
+let lastStateNote = 'Connecting to the X feed…';
+try { reactions = readReactions(JSON.parse(localStorage.getItem(REACTION_KEY) || '{}')); } catch { /* Continue without stored reactions. */ }
+
+function el(tag, cls, text) { const node = document.createElement(tag); if (cls) node.className = cls; if (text !== undefined) node.textContent = text; return node; }
+function link(text, url, cls) { const a = el('a', cls, text); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; }
+function message(text) { $('reaction-message').textContent = text; }
+function marketName(coin) { return SIGNAL_MARKETS.find(m => m.coin === coin)?.name || 'All markets'; }
+function dateText(raw) { return new Date(raw).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); }
+function isStale() { return fetchedAt && Date.now() - Date.parse(fetchedAt) > 15 * 60_000; }
+
+function appendPostText(node, post) {
+  const knownURLs = new Map(post.entities.urls.map(e => [e.url, e.display]));
+  const pattern = /https?:\/\/[^\s<>]+|@[A-Za-z0-9_]{1,15}\b|#[\p{L}\p{N}_]+/gu;
+  let end = 0;
+  for (const token of post.text.matchAll(pattern)) {
+    node.append(document.createTextNode(post.text.slice(end, token.index)));
+    const value = token[0];
+    if (value.startsWith('@') && !/[\w@]/.test(post.text[token.index - 1] || '')) node.append(link(value, `https://x.com/${value.slice(1)}`));
+    else if (value.startsWith('#')) node.append(link(value, `https://x.com/search?q=${encodeURIComponent(value)}`));
+    else if (value.startsWith('http')) node.append(link(knownURLs.get(value) || value, value));
+    else node.append(document.createTextNode(value));
+    end = token.index + value.length;
+  }
+  node.append(document.createTextNode(post.text.slice(end)));
+}
+
+function card(post) {
+  const article = el('article', 'pulse-card');
+  article.tabIndex = 0;
+  article.setAttribute('aria-label', `X post by ${post.author.name}. Use right arrow to agree or left arrow to disagree.`);
+  article.setAttribute('aria-describedby', 'keyboard-hint');
+  const kicker = el('div', 'card-kicker');
+  kicker.append(el('span', '', `MARKET CONVERSATION / ${post.markets.map(marketName).join(' · ')}`));
+  const x = el('span', 'x-mark');
+  x.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" role="img" aria-label="X"><path fill="currentColor" d="M18.9 2H22l-6.8 7.8L23.2 22h-6.3L12 14.6 5.5 22H2.3l7.3-8.5L.8 2h6.5l4.5 6.8L18.9 2Zm-1.1 18h1.7L6.4 3.9H4.6L17.8 20Z"/></svg>';
+  kicker.append(x);
+  const author = el('div', 'card-author');
+  const avatarLink = link('', post.author.url, 'author-avatar');
+  avatarLink.setAttribute('aria-label', `${post.author.name}'s X profile`);
+  if (post.author.avatar) {
+    const img = el('img'); img.src = post.author.avatar; img.alt = ''; img.width = 48; img.height = 48; img.referrerPolicy = 'no-referrer';
+    img.addEventListener('error', () => { avatarLink.replaceChildren(document.createTextNode(post.author.name.slice(0, 1))); });
+    avatarLink.append(img);
+  } else avatarLink.textContent = post.author.name.slice(0, 1);
+  const identity = el('div', 'author-identity');
+  identity.append(link(post.author.name, post.author.url, 'author-name'), link(`@${post.author.username}`, post.author.url, 'author-handle'));
+  author.append(avatarLink, identity);
+  const body = el('p', 'card-text'); appendPostText(body, post);
+  body.tabIndex = 0; body.setAttribute('role', 'region'); body.setAttribute('aria-label', 'Scrollable full post text');
+  const source = el('div', 'card-source');
+  const time = el('time', 'card-time', dateText(post.createdAt)); time.dateTime = post.createdAt;
+  const timeLink = link('', post.url); timeLink.append(time); source.append(timeLink, link('View on X ↗', post.url));
+  if (post.edited) source.append(el('span', 'edited-note', 'Edited · view current version on X'));
+  article.append(kicker, author, body);
+  if (post.images.length) {
+    const images = el('div', 'card-images');
+    for (const item of post.images) { const a = link('', post.url); const img = el('img'); img.src = item.url; img.alt = item.alt; img.loading = 'lazy'; img.referrerPolicy = 'no-referrer'; a.append(img); images.append(a); }
+    article.append(images);
+  }
+  if (post.hasOtherMedia) article.append(link('Watch attached media on X ↗', post.url, 'media-link'));
+  article.append(source);
+  const metrics = el('div', 'card-metrics');
+  const fmt = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+  for (const [key, label] of [['likes', 'X likes'], ['replies', 'Replies'], ['reposts', 'Reposts']]) if (Number.isFinite(post.metrics[key])) metrics.append(el('span', '', `${fmt.format(post.metrics[key])} ${label}`));
+  article.append(metrics);
+  const tags = el('div', 'card-tags');
+  for (const coin of post.markets) tags.append(el('span', '', SIGNAL_MARKETS.find(m => m.coin === coin)?.label));
+  if (reactions[post.id]) tags.append(el('span', 'your-reaction', `Your takeaway: ${reactions[post.id].decision === 'agree' ? 'Agree' : 'Disagree'}`));
+  article.append(tags);
+  // Swipe affordances are separate Almond feedback; they do not invoke X actions.
+  article.append(el('span', 'swipe-stamp agree-stamp', 'AGREE'), el('span', 'swipe-stamp disagree-stamp', 'DISAGREE'));
+  article.addEventListener('pointerdown', beginDrag);
+  article.addEventListener('pointermove', moveDrag);
+  article.addEventListener('pointerup', endDrag);
+  article.addEventListener('pointercancel', cancelDrag);
+  article.addEventListener('lostpointercapture', cancelDrag);
+  article.addEventListener('click', event => {
+    if (article.dataset.suppressClick === 'true') { event.preventDefault(); event.stopPropagation(); return; }
+    if (!event.target.closest('a') && !window.getSelection()?.toString()) window.open(post.url, '_blank', 'noopener,noreferrer');
+  });
+  return article;
+}
+
+function updateControls() {
+  const disabled = !current || busy || isStale();
+  for (const id of ['agree-button', 'disagree-button', 'skip-button']) $(id).disabled = disabled;
+  $('undo-button').disabled = !history.length || busy;
+  $('export-reactions').disabled = !Object.keys(reactions).length;
+  if ($('clear-reactions')) $('clear-reactions').disabled = !Object.keys(reactions).length || busy;
+  $('refresh-feed').disabled = loading;
+  if ($('connect-feed')) $('connect-feed').disabled = loading;
+}
+
+function renderJournal() {
+  const counts = reactionCounts(reactions, market);
+  $('reviewed-count').textContent = counts.reviewed;
+  $('agree-count').textContent = counts.agree;
+  $('disagree-count').textContent = counts.disagree;
+  const list = $('saved-list'); list.replaceChildren();
+  const rows = Object.entries(reactions).filter(([, r]) => market === 'all' || r.markets.includes(market)).sort((a, b) => Date.parse(b[1].at) - Date.parse(a[1].at)).slice(0, 12);
+  if (!rows.length) { list.append(el('p', 'journal-empty', 'Your perspective starts here. React to a post to save your takeaway.')); return; }
+  for (const [id, r] of rows) {
+    const row = el('div', `saved-item ${r.decision}`);
+    const detail = el('div', 'saved-detail');
+    detail.append(link(r.username ? `@${r.username}` : `Post ${id}`, r.url), el('small', '', `${r.markets.map(marketName).join(' · ')} / ${dateText(r.at)}`));
+    row.append(el('span', 'saved-direction', r.decision === 'agree' ? '↗' : '↙'), detail, el('span', 'saved-decision', r.decision === 'agree' ? 'Agree' : 'Disagree'));
+    list.append(row);
+  }
+}
+
+function renderDeck(preferredId) {
+  generation++;
+  pointer = null;
+  busy = false;
+  const focused = document.activeElement?.classList.contains('pulse-card');
+  const candidates = selectPosts(posts, { market, filter: $('review-filter').value, sort: $('feed-sort').value, reactions, skipped });
+  current = candidates.find(p => p.id === preferredId) || candidates.find(p => !seen.has(p.id)) || null;
+  const deck = $('deck'); deck.replaceChildren();
+  $('market-label').textContent = marketName(market);
+  if ($('filter-label')) $('filter-label').textContent = `${candidates.filter(p => !seen.has(p.id)).length} posts in this view`;
+  if (current) {
+    deck.append(card(current));
+    if (focused) deck.firstElementChild.focus({ preventScroll: true });
+  } else {
+    const empty = el('div', 'deck-empty'); empty.id = 'deck-empty';
+    empty.append(el('span', 'empty-kicker', dataState === 'live' ? 'YOUR PERSPECTIVE, AT YOUR PACE' : 'REAL POSTS / REAL SOURCES'));
+    const symbol = el('div', 'empty-symbol'); symbol.setAttribute('aria-hidden', 'true'); symbol.append(el('span', '', '↖'), el('span', '', '↗')); empty.append(symbol);
+    const title = dataState === 'loading' ? 'Finding the conversation.' : dataState === 'setup' ? 'Your feed is next.' : dataState === 'locked' ? 'Connect your private feed.' : dataState === 'error' ? 'The feed needs a moment.' : candidates.length || posts.length ? 'You’re through this view.' : 'A quiet moment.';
+    empty.append(el('h3', '', title), el('p', '', dataState === 'live' ? 'Refresh for the latest batch, choose another market, or revisit your reviewed posts.' : lastStateNote), el('span', 'empty-footer', dataState === 'setup' ? 'No sample posts. Waiting for the source.' : 'One perspective at a time.'));
+    if (dataState === 'live' && candidates.length) { const again = el('button', 'secondary-button', 'Revisit this view ↻'); again.type = 'button'; again.addEventListener('click', () => { seen.clear(); skipped.clear(); renderDeck(); }); empty.append(again); }
+    deck.append(empty);
+  }
+  renderJournal(); updateControls();
+}
+
+function save() {
+  try { localStorage.setItem(REACTION_KEY, JSON.stringify(reactions)); }
+  catch { message('Reaction saved for this visit. Browser storage is unavailable.'); return false; }
+  return true;
+}
+
+async function react(decision) {
+  if (!current || busy || isStale()) return;
+  const post = current, token = generation;
+  busy = true; updateControls();
+  const article = $('deck').querySelector('.pulse-card');
+  article?.classList.add(decision === 'agree' ? 'is-agreeing' : 'is-disagreeing');
+  if (article && !reducedMotion.matches) {
+    const direction = decision === 'agree' ? 1 : -1;
+    await article.animate([{ transform: getComputedStyle(article).transform, opacity: 1 }, { transform: `translateX(${direction * Math.min(innerWidth, 700)}px) rotate(${direction * 16}deg)`, opacity: 0 }], { duration: 280, easing: 'cubic-bezier(.2,.7,.3,1)', fill: 'forwards' }).finished.catch(() => {});
+  }
+  if (token !== generation) return;
+  history.push({ id: post.id, previous: reactions[post.id] || null, type: 'reaction' }); history = history.slice(-100);
+  reactions = recordReaction(reactions, post, decision, market);
+  seen.add(post.id);
+  const stored = save();
+  message(`${decision === 'agree' ? 'Like / agree' : 'Dislike / disagree'} recorded for @${post.author.username}${stored ? ' in this browser.' : ' for this visit; browser storage is unavailable.'}`);
+  renderDeck();
+}
+
+function beginDrag(event) {
+  if (busy || !current || isStale() || !event.isPrimary || event.button !== 0 || event.target.closest('a')) return;
+  const article = event.currentTarget;
+  pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, dx: 0, dy: 0, article, horizontal: false, vertical: false };
+  article.dataset.suppressClick = 'false';
+}
+function moveDrag(event) {
+  if (!pointer || pointer.id !== event.pointerId) return;
+  pointer.dx = event.clientX - pointer.x; pointer.dy = event.clientY - pointer.y;
+  if (!pointer.horizontal && !pointer.vertical) {
+    if (Math.abs(pointer.dx) > 12 && Math.abs(pointer.dx) > Math.abs(pointer.dy) * 1.25) { pointer.horizontal = true; pointer.article.setPointerCapture(event.pointerId); }
+    else if (Math.abs(pointer.dy) > 12) pointer.vertical = true;
+  }
+  if (!pointer.horizontal) return;
+  event.preventDefault();
+  pointer.article.dataset.suppressClick = 'true';
+  pointer.article.classList.add('is-dragging');
+  pointer.article.style.transform = `translateX(${pointer.dx}px) rotate(${pointer.dx / 28}deg)`;
+  const confidence = Math.min(1, Math.abs(pointer.dx) / 130);
+  pointer.article.style.setProperty('--agree-opacity', pointer.dx > 0 ? confidence : 0);
+  pointer.article.style.setProperty('--disagree-opacity', pointer.dx < 0 ? confidence : 0);
+}
+function cancelDrag(event) {
+  if (!pointer) return;
+  // Touch starts with implicit capture on a child; transferring it to the card
+  // produces a bubbled loss event from that child, not a canceled gesture.
+  if (event?.type === 'lostpointercapture' && (event.target !== pointer.article || pointer.article.hasPointerCapture(pointer.id))) return;
+  const { article } = pointer; pointer = null;
+  article.classList.remove('is-dragging'); article.style.transform = ''; article.style.removeProperty('--agree-opacity'); article.style.removeProperty('--disagree-opacity');
+  setTimeout(() => { article.dataset.suppressClick = 'false'; }, 200);
+}
+function endDrag(event) {
+  if (!pointer || pointer.id !== event.pointerId) return;
+  const p = pointer;
+  const decision = p.horizontal ? swipeDecision(p.dx, p.dy, p.article.offsetWidth) : null;
+  pointer = null;
+  if (p.article.hasPointerCapture(event.pointerId)) p.article.releasePointerCapture(event.pointerId);
+  if (decision) { react(decision); return; }
+  p.article.classList.remove('is-dragging'); p.article.style.transform = ''; p.article.style.removeProperty('--agree-opacity'); p.article.style.removeProperty('--disagree-opacity');
+  setTimeout(() => { p.article.dataset.suppressClick = 'false'; }, 200);
+}
+
+function updateMarketLinks() {
+  const m = SIGNAL_MARKETS.find(m => m.coin === market);
+  $('venue-link').href = `https://app.hyperliquid.xyz/trade/${m?.coin || 'BTC'}`;
+  $('venue-link').textContent = `Open ${m?.name || 'BTC'} on Hyperliquid ↗`;
+  $('search-x').href = `https://x.com/search?q=${encodeURIComponent(m?.topic || SIGNAL_MARKETS.map(item => item.topic).join(' OR '))}&f=live`;
+}
+
+async function loadFeed() {
+  const token = ++fetchGeneration;
+  controller?.abort(); controller = new AbortController(); clearTimeout(autoTimer);
+  loading = true; dataState = 'loading'; lastStateNote = 'Fetching a recent batch from X…';
+  $('feed-status').textContent = 'Updating the conversation'; $('feed-status').dataset.state = 'loading';
+  if (!posts.length) renderDeck(); else updateControls();
+  try {
+    const access = $('feed-access').value.trim();
+    const response = await fetch(`/api/x-feed?market=${encodeURIComponent(market)}`, { headers: access ? { Authorization: `Bearer ${access}` } : {}, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]) });
+    const result = await response.json();
+    if (token !== fetchGeneration) return;
+    if (!response.ok) { const error = new Error(result.message || 'This feed could not be loaded.'); error.state = result.state; throw error; }
+    dataState = result.state; lastStateNote = result.note;
+    posts = result.posts; fetchedAt = result.fetchedAt || null;
+    $('feed-status').textContent = result.state === 'live' ? 'Recent X posts connected' : 'X connection required';
+    $('feed-status').dataset.state = result.state;
+    $('feed-note').textContent = lastStateNote;
+    $('source-time').textContent = fetchedAt ? dateText(fetchedAt) : 'Awaiting connection';
+    $('source-time').dateTime = fetchedAt || '';
+    const oldId = current?.id;
+    renderDeck(oldId);
+    if (result.state === 'live') autoTimer = setTimeout(() => { if (document.visibilityState === 'visible') loadFeed(); }, 300_000);
+  } catch (error) {
+    if (token !== fetchGeneration) return;
+    dataState = error.state || 'error'; lastStateNote = error.name === 'AbortError' ? 'The feed refresh was interrupted.' : error.message;
+    if (dataState === 'locked') document.querySelector('.feed-setup details').open = true;
+    $('feed-status').textContent = dataState === 'locked' ? 'Feed access code required' : 'Feed update unavailable';
+    $('feed-status').dataset.state = dataState; $('feed-note').textContent = lastStateNote;
+    // Do not present previously loaded posts as fresh after a failed refresh.
+    posts = []; current = null; fetchedAt = null; $('source-time').textContent = 'Update unavailable';
+    renderDeck();
+  } finally { if (token === fetchGeneration) { loading = false; updateControls(); } }
+}
+
+$('agree-button').addEventListener('click', () => react('agree'));
+$('disagree-button').addEventListener('click', () => react('disagree'));
+$('skip-button').addEventListener('click', () => { if (!current || busy) return; const id = current.id; skipped.add(id); history.push({ id, type: 'skip' }); message('Skipped for this visit. No reaction recorded.'); renderDeck(); });
+$('undo-button').addEventListener('click', () => {
+  if (busy || !history.length) return;
+  const last = history.pop(); seen.delete(last.id); skipped.delete(last.id);
+  if (last.type === 'reaction') { if (last.previous) reactions[last.id] = last.previous; else delete reactions[last.id]; save(); }
+  message('Last action undone.'); renderDeck(last.id);
+});
+for (const button of document.querySelectorAll('[data-signal-market]')) button.addEventListener('click', () => {
+  if (button.dataset.signalMarket === market) return;
+  market = button.dataset.signalMarket; seen.clear(); skipped.clear(); posts = []; current = null; fetchedAt = null;
+  for (const b of document.querySelectorAll('[data-signal-market]')) { b.setAttribute('aria-pressed', String(b === button)); b.classList.toggle('active', b === button); }
+  updateMarketLinks(); loadFeed();
+});
+for (const id of ['review-filter', 'feed-sort']) $(id).addEventListener('change', () => { seen.clear(); skipped.clear(); renderDeck(); });
+$('refresh-feed').addEventListener('click', loadFeed);
+if ($('connect-feed')) $('connect-feed').addEventListener('click', loadFeed);
+$('feed-access').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); loadFeed(); } });
+$('export-reactions').addEventListener('click', () => {
+  const output = { schema: 'almond.market-pulse.reactions.v1', exportedAt: new Date().toISOString(), scope: 'This browser only; these are Almond opinions, not X likes, market sentiment, or strategy results.', reactions };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' }));
+  const a = el('a'); a.href = url; a.download = 'almond-market-pulse-reactions.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10_000);
+});
+if ($('clear-reactions')) $('clear-reactions').addEventListener('click', () => { reactions = {}; history = []; seen.clear(); skipped.clear(); save(); message('Your saved reactions have been cleared from this browser.'); renderDeck(); });
+document.addEventListener('keydown', event => {
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.target.closest('input,select,textarea,button,a,[contenteditable]')) return;
+  if (event.key === 'ArrowRight') { event.preventDefault(); react('agree'); }
+  else if (event.key === 'ArrowLeft') { event.preventDefault(); react('disagree'); }
+  else if (event.key.toLowerCase() === 'z') $('undo-button').click();
+  else if (event.key.toLowerCase() === 's') $('skip-button').click();
+});
+window.addEventListener('storage', event => {
+  if (event.key !== REACTION_KEY) return;
+  try { reactions = readReactions(JSON.parse(event.newValue || '{}')); history = []; renderDeck(current?.id); } catch { /* Ignore invalid external storage. */ }
+});
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && dataState === 'live' && Date.now() - Date.parse(fetchedAt) >= 300_000) loadFeed(); });
+window.addEventListener('pagehide', () => { clearTimeout(autoTimer); controller?.abort(); $('feed-access').value = ''; });
+window.addEventListener('pageshow', event => { if (event.persisted) loadFeed(); });
+updateMarketLinks(); renderJournal(); loadFeed();

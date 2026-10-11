@@ -423,3 +423,5 @@ details[open] .details-plus { transform:rotate(45deg); }
 .orbital-scene,.art-grain,.art-wash { pointer-events:none; }
 /* Keep the expanded landing navigation clear on smaller tablets. */
 @media(max-width:850px){.site-header nav{display:none}}
+
+@media(max-width:1150px){.site-header nav{display:none}}
